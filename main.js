@@ -24,6 +24,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const zlib = require("node:zlib");
 
 /*
  * 共享主题模型是 ESM（lib/*.mjs）：渲染层直接 import，插件进程用动态 import
@@ -80,6 +81,9 @@ const IMAGE_ID_RE = /^[0-9A-Za-z][0-9A-Za-z_-]{7,63}$/;
    "studio.library": () => readLibrary(),
    "studio.theme.save": (payload) => saveTheme(payload),
    "studio.theme.remove": (payload) => removeTheme(payload),
+  "studio.theme.import": () => importThemes(),
+  "studio.theme.export": (payload) => exportTheme(payload),
+  "studio.preview.save": (payload) => savePreview(payload),
    "studio.apply": (payload) => applyTheme(payload),
    "studio.state.put": (payload) => writeState(payload),
    "studio.image.put": (payload) => putImage(payload),
@@ -200,6 +204,9 @@ function normalizeTheme(raw) {
     if (value === undefined || value === null || value === "") continue;
     if (typeof value !== "string" || value.length > 220) {
       throw new Error(`--ds-${key} 的值不合法`);
+    }
+    if (!core.TOKEN_KEYS.includes(key)) {
+      throw new Error(`没有这个 token：--ds-${key}`);
     }
     if (!core.isTokenValueAllowed(key, value)) {
       throw new Error(`--ds-${key} 的值不被允许：${value.slice(0, 40)}`);
@@ -749,6 +756,439 @@ async function readImageBytes(payload) {
     mime: "image/png",
     bytes: bytes.length,
     dataUrl: `data:image/png;base64,${bytes.toString("base64")}`,
+  };
+}
+
+/* ==================================================================== *
+ * 导入 / 导出（ZIP）
+ *
+ *   exportTheme   选一个目录 → 写一个自包含的 zip：主题设计 + 图片字节 + 预览图 + CSS
+ *   importThemes  选一个目录 → 找 zip（或解开的同名目录）→ 图片落地 → 主题注册
+ *   savePreview   选一个目录 → 只写一张预览图 PNG
+ *
+ * 三个约束决定了实现形态：
+ *
+ * 1. **不能引依赖**。插件包安装时不带 node_modules，所以 ZIP 用 Node 自带的
+ *    zlib（deflateRaw / inflateRaw）自己拼，几十行就够。
+ * 2. **位置由用户指定**。`pi.fs.requestDirectory()` 弹的是宿主的原生目录对话框
+ *    （面板调用白名单里有它，注释还写明「选目录这个动作必须是面板能做的」，不需要任何
+ *    fs 权限）。拿到路径后用 node:fs 读写 —— 范围只有用户刚指的那一个目录，文件名由
+ *    我们固定，不遍历、不递归到别处。
+ * 3. **自包含**。主题 CSS 里图片是绝对路径（ADR 0255），所以导出必须把图片字节一起
+ *    带上；导入端把它落进本机数据目录并改写引用，换台机器才真的能用。
+ * ==================================================================== */
+
+/** 导出清单里的生成器版本：直接读 manifest，免得两处版本漂移。 */
+function pluginVersion() {
+  try {
+    return String(require(path.join(__dirname, "manifest.json")).version || "unknown");
+  } catch {
+    return "unknown";
+  }
+}
+
+/* ---------------------------------------------------------------- ZIP */
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let c = 0xffffffff;
+  for (let i = 0; i < buffer.length; i += 1) c = CRC_TABLE[(c ^ buffer[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/** ZIP 的时间戳是 DOS 格式（秒只有 2 秒精度）。 */
+function dosDateTime(date) {
+  const time =
+    (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const day = ((date.getFullYear() - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { time, day };
+}
+
+/** 一组 {name, data} → zip 字节。压得动就用方法 8，压不动原样存（方法 0）。 */
+function zipWrite(entries) {
+  const { time, day } = dosDateTime(new Date());
+  const parts = [];
+  const central = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, "utf8");
+    const content = Buffer.isBuffer(entry.data)
+      ? entry.data
+      : Buffer.from(String(entry.data), "utf8");
+    const deflated = zlib.deflateRawSync(content, { level: 6 });
+    const compress = deflated.length < content.length;
+    const body = compress ? deflated : content;
+    const method = compress ? 8 : 0;
+    const crc = crc32(content);
+
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0x0800, 6); // 文件名按 UTF-8
+    local.writeUInt16LE(method, 8);
+    local.writeUInt16LE(time, 10);
+    local.writeUInt16LE(day, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(body.length, 18);
+    local.writeUInt32LE(content.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    local.writeUInt16LE(0, 28);
+    parts.push(local, name, body);
+
+    const dir = Buffer.alloc(46);
+    dir.writeUInt32LE(0x02014b50, 0);
+    dir.writeUInt16LE(20, 4);
+    dir.writeUInt16LE(20, 6);
+    dir.writeUInt16LE(0x0800, 8);
+    dir.writeUInt16LE(method, 10);
+    dir.writeUInt16LE(time, 12);
+    dir.writeUInt16LE(day, 14);
+    dir.writeUInt32LE(crc, 16);
+    dir.writeUInt32LE(body.length, 20);
+    dir.writeUInt32LE(content.length, 24);
+    dir.writeUInt16LE(name.length, 28);
+    dir.writeUInt32LE(offset, 42);
+    central.push(dir, name);
+
+    offset += local.length + name.length + body.length;
+  }
+
+  const directory = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+
+  return Buffer.concat([...parts, directory, end]);
+}
+
+/** zip 字节 → Map<条目名, Buffer>。方法 0/8 都支持（资源管理器压出来的也是 8）。 */
+function zipRead(buffer) {
+  let eocd = -1;
+  const floor = Math.max(0, buffer.length - 66_000);
+  for (let i = buffer.length - 22; i >= floor; i -= 1) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error("不是 zip 文件（找不到目录结尾）");
+
+  const total = buffer.readUInt16LE(eocd + 10);
+  let cursor = buffer.readUInt32LE(eocd + 16);
+  const files = new Map();
+
+  for (let index = 0; index < total; index += 1) {
+    if (cursor + 46 > buffer.length || buffer.readUInt32LE(cursor) !== 0x02014b50) {
+      throw new Error("zip 目录损坏");
+    }
+    const method = buffer.readUInt16LE(cursor + 10);
+    const size = buffer.readUInt32LE(cursor + 20);
+    const nameLength = buffer.readUInt16LE(cursor + 28);
+    const extraLength = buffer.readUInt16LE(cursor + 30);
+    const commentLength = buffer.readUInt16LE(cursor + 32);
+    const localOffset = buffer.readUInt32LE(cursor + 42);
+    const name = buffer.subarray(cursor + 46, cursor + 46 + nameLength).toString("utf8");
+
+    // 数据起点按**本地头**的长度算（两边可能不一致）。
+    const localNameLength = buffer.readUInt16LE(localOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+    const start = localOffset + 30 + localNameLength + localExtraLength;
+    const raw = buffer.subarray(start, start + size);
+
+    files.set(name, method === 8 ? zlib.inflateRawSync(raw) : Buffer.from(raw));
+    cursor += 46 + nameLength + extraLength + commentLength;
+  }
+  return files;
+}
+
+/* ------------------------------------------------------------ 文件名 */
+
+/** 文件名里不能有的字符 + 长度上限；中文照留。 */
+function safeFileName(value, fallback) {
+  const cleaned = String(value || "")
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+  return cleaned || fallback;
+}
+
+function fileStamp() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+  return (
+    `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+    `-${pad(now.getHours())}${pad(now.getMinutes())}`
+  );
+}
+
+/** 同名就加 -2 / -3，绝不覆盖用户已有的文件。 */
+function uniquePath(dir, base, extension) {
+  let candidate = path.join(dir, `${base}${extension}`);
+  let index = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(dir, `${base}-${index}${extension}`);
+    index += 1;
+  }
+  return candidate;
+}
+
+/** 让用户选一个目录；取消返回 null。 */
+async function pickDirectory() {
+  if (!pi.fs || typeof pi.fs.requestDirectory !== "function") {
+    throw new Error("这个宿主没有 pi.fs.requestDirectory，无法选择导出/导入位置");
+  }
+  const picked = await pi.fs.requestDirectory();
+  return picked && picked.path ? String(picked.path) : null;
+}
+
+/* ------------------------------------------------------------ 导出 */
+
+const EXPORT_FORMAT = "pi.theme.studio/theme-export";
+const EXPORT_VERSION = 1;
+
+function themeReadme(theme, exportedAt) {
+  return [
+    "主题工坊 · 主题导出",
+    "",
+    `主题：${theme.label}（id: ${theme.id}，${theme.base} 基底）`,
+    `导出时间：${exportedAt}`,
+    "生成者：主题工坊 pi.theme.studio",
+    "",
+    "目录里有什么",
+    "  theme.json    这个主题的完整设计（token 覆盖、各区域背景、左栏底图）。导入认的就是它。",
+    "  theme.css     由上面的设计生成的 CSS，可以直接给人手工使用（图片按导出机器的路径引用）。",
+    "  preview.png   这个主题在 1280×800 预览里的样子。",
+    "  images/       主题用到的 PNG 原图字节。",
+    "  manifest.json 清单元信息（版本、文件列表、图片大小）。",
+    "",
+    "怎么导入",
+    "  主题工坊面板 →「导出」→「导入主题…」→ 选中**这个 zip 所在的文件夹**。",
+    "  （宿主给插件的只有目录选择对话框，所以选的是文件夹；把 zip 解开放进一个文件夹同样能导入。）",
+    "",
+    "导入时如果 id 已被占用，会派生成 xxx-2，不会覆盖你已有的主题。",
+  ].join("\n");
+}
+
+async function exportTheme(payload) {
+  const input = payload && typeof payload === "object" ? payload : {};
+  const theme = normalizeTheme(input.theme);
+  const state = await readState();
+  const images = state.images || {};
+
+  // 图片必须真的在盘上：zip 里要放它的字节。
+  const imageEntries = [];
+  for (const id of referencedImages(theme)) {
+    const entry = images[id];
+    if (!entry || !imageUsable(id, images)) {
+      throw new Error(`主题引用的图片不在磁盘上（${id}），无法导出 —— 请重新上传那张图`);
+    }
+    imageEntries.push({ id, name: entry.name || `${id}.png`, bytes: entry.bytes || 0 });
+  }
+
+  const dir = await pickDirectory();
+  if (!dir) return { ok: false, canceled: true };
+
+  const exportedAt = new Date().toISOString();
+  const preview = String(input.previewPng || "");
+  const previewBytes = /^[A-Za-z0-9+/=]{100,}$/.test(preview) ? Buffer.from(preview, "base64") : null;
+
+  const entries = [
+    { name: "theme.json", data: Buffer.from(JSON.stringify(theme, null, 2), "utf8") },
+    { name: "theme.css", data: Buffer.from(buildCss(theme, images), "utf8") },
+    { name: "README.txt", data: Buffer.from(themeReadme(theme, exportedAt), "utf8") },
+    {
+      name: "manifest.json",
+      data: Buffer.from(
+        JSON.stringify(
+          {
+            format: EXPORT_FORMAT,
+            schemaVersion: EXPORT_VERSION,
+            exportedAt,
+            generator: { plugin: pi.plugin.getId(), version: pluginVersion() },
+            theme: { id: theme.id, label: theme.label, base: theme.base },
+            images: imageEntries.map((image) => ({
+              id: image.id,
+              file: `images/${image.id}.png`,
+              bytes: image.bytes,
+            })),
+            hasPreview: Boolean(previewBytes),
+            files: [
+              "theme.json",
+              "theme.css",
+              "README.txt",
+              "manifest.json",
+              ...(previewBytes ? ["preview.png"] : []),
+              ...imageEntries.map((image) => `images/${image.id}.png`),
+            ],
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      ),
+    },
+    ...(previewBytes ? [{ name: "preview.png", data: previewBytes }] : []),
+    ...imageEntries.map((image) => ({
+      name: `images/${image.id}.png`,
+      data: fs.readFileSync(images[image.id].path),
+    })),
+  ];
+
+  const target = uniquePath(dir, `${safeFileName(theme.label, "theme")}-${fileStamp()}`, ".zip");
+  const archive = zipWrite(entries);
+  fs.writeFileSync(target, archive);
+
+  return {
+    ok: true,
+    path: target,
+    bytes: archive.length,
+    entries: entries.length,
+    images: imageEntries.length,
+    preview: Boolean(previewBytes),
+  };
+}
+
+/** 只导出预览图。 */
+async function savePreview(payload) {
+  const input = payload && typeof payload === "object" ? payload : {};
+  const png = String(input.png || "");
+  if (!/^[A-Za-z0-9+/=]{100,}$/.test(png)) throw new Error("预览图数据不合法");
+  const dir = await pickDirectory();
+  if (!dir) return { ok: false, canceled: true };
+  const target = uniquePath(dir, `${safeFileName(input.label, "theme")}-预览-${fileStamp()}`, ".png");
+  const bytes = Buffer.from(png, "base64");
+  fs.writeFileSync(target, bytes);
+  return { ok: true, path: target, bytes: bytes.length };
+}
+
+/* ------------------------------------------------------------ 导入 */
+
+/**
+ * 从用户选的目录里读一个导出包。
+ *
+ * 三种形态都认：
+ *   1. 目录里只有一个 .zip     → 读那个 zip
+ *   2. 目录里是解开的导出包    → 读 theme.json（+ images/）
+ *   3. 目录里有多个 zip        → 报错并列出名字，让用户自己分开
+ */
+function readExportSource(dir) {
+  const names = fs.readdirSync(dir);
+  const zips = names.filter((name) => /\.zip$/i.test(name));
+  if (zips.length === 1) {
+    const zipPath = path.join(dir, zips[0]);
+    return { kind: "zip", source: zipPath, files: zipRead(fs.readFileSync(zipPath)) };
+  }
+  if (zips.length > 1) {
+    throw new Error(
+      `这个文件夹里有多个 zip，不知道用哪个：${zips.slice(0, 5).join("、")}。请把它们分开。`,
+    );
+  }
+  const themeFile = names.find((name) => /^theme\.json$/i.test(name));
+  if (themeFile) {
+    const files = new Map();
+    files.set("theme.json", fs.readFileSync(path.join(dir, themeFile)));
+    const imagesDir = path.join(dir, "images");
+    if (fs.existsSync(imagesDir) && fs.statSync(imagesDir).isDirectory()) {
+      for (const image of fs.readdirSync(imagesDir)) {
+        if (/\.png$/i.test(image)) {
+          files.set(`images/${image}`, fs.readFileSync(path.join(imagesDir, image)));
+        }
+      }
+    }
+    return { kind: "folder", source: dir, files };
+  }
+  throw new Error(
+    `这个文件夹里既没有 .zip，也没有 theme.json：${names.slice(0, 6).join("、") || "(空)"}`,
+  );
+}
+
+async function importThemes() {
+  const dir = await pickDirectory();
+  if (!dir) return { ok: false, canceled: true };
+
+  const { kind, source, files } = readExportSource(dir);
+  const themeBytes = files.get("theme.json");
+  if (!themeBytes) throw new Error("导出包里没有 theme.json");
+
+  let incoming;
+  try {
+    incoming = JSON.parse(themeBytes.toString("utf8"));
+  } catch (error) {
+    throw new Error(`theme.json 解析失败：${error.message}`);
+  }
+  if (!incoming || typeof incoming !== "object" || Array.isArray(incoming)) {
+    throw new Error("theme.json 不是一个主题对象");
+  }
+
+  const state = await readState();
+  const themes = Array.isArray(state.themes) && state.themes.length ? state.themes : presets.clone();
+  const taken = new Set(themes.map((theme) => theme.id));
+
+  // 图片：按主题引用的 id 去包里找同名文件，落进本机数据目录。
+  const idMap = {};
+  let imageCount = 0;
+  const missing = [];
+  for (const oldId of referencedImages(incoming)) {
+    const bytes = files.get(`images/${oldId}.png`);
+    if (!bytes) {
+      missing.push(oldId);
+      continue;
+    }
+    const saved = await putImage({ bytes, name: `${oldId}.png`, themeId: "import" });
+    idMap[oldId] = saved.id;
+    imageCount += 1;
+  }
+
+  const theme = JSON.parse(JSON.stringify(incoming));
+  if (typeof theme.label !== "string" || !theme.label.trim()) theme.label = "导入的主题";
+  const base = THEME_ID_PATTERN.test(String(theme.id || "")) ? String(theme.id) : "imported";
+  let id = base;
+  let suffix = 2;
+  while (taken.has(id)) {
+    id = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  const renamed = id !== base ? `${base} → ${id}` : "";
+  theme.id = id;
+
+  // 引用换成新 id；包里缺的那张就当没设（不因为少一张图毁掉整个导入）。
+  const fix = (image) => {
+    if (!image || image.on !== true || !image.image) return image;
+    const next = idMap[image.image];
+    return next ? { ...image, image: next } : { ...image, on: false, image: "" };
+  };
+  if (theme.sidebarImage && theme.sidebarImage.on === true && theme.sidebarImage.kind === "image") {
+    theme.sidebarImage = fix(theme.sidebarImage);
+  }
+  const regions = {};
+  for (const regionId of Object.keys(theme.regions || {})) {
+    regions[regionId] = { ...theme.regions[regionId], image: fix(theme.regions[regionId].image) };
+  }
+  theme.regions = regions;
+
+  const result = await saveTheme({ theme });
+  return {
+    ok: true,
+    kind,
+    source,
+    imported: { id: theme.id, label: theme.label, bytes: result.bytes },
+    renamed: renamed ? [renamed] : [],
+    images: imageCount,
+    missingImages: missing,
   };
 }
 

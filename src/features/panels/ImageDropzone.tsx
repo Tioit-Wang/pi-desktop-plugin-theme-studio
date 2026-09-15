@@ -2,16 +2,12 @@ import { ImagePlus, Upload, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { humanSize } from "@/lib/format";
 import type { ImageEntry } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** 宿主对单个主题声明的资源合计上限。 */
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-
-export function humanSize(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))}KB`;
-}
 
 /**
  * 拖拽上传区。

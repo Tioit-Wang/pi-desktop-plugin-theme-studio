@@ -1,7 +1,7 @@
 import { AlertTriangle, RefreshCw, Trash, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { humanSize } from "@/features/panels/ImageDropzone";
+import { humanSize } from "@/lib/format";
 import { imageUrl } from "@/lib/bridge";
 import type { ImageEntry, OrphanImage, Theme } from "@/lib/types";
 

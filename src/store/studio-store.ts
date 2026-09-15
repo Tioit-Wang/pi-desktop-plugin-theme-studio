@@ -10,6 +10,8 @@ import {
   on,
 } from "@/lib/bridge";
 import * as core from "@/lib/theme-model";
+import { humanSize } from "@/lib/format";
+import { tryCapturePreview } from "@/lib/preview-shot";
 import type {
   ImageEntry,
   LibraryResponse,
@@ -45,6 +47,36 @@ export function isValidThemeId(id: string): boolean {
   return /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(id);
 }
 
+/** 提示的三种语气。 */
+export type ToastKind = "success" | "error" | "info";
+
+/**
+ * 一条提示。
+ *
+ * 同一 key 的提示互相替换：「正在导出…」原地变成「已导出…」，而不是叠两条。
+ */
+export type Toast = {
+  id: string;
+  key: string;
+  kind: ToastKind;
+  title: string;
+  detail?: string;
+  /** detail 是路径这类内容时用等宽字体。 */
+  mono?: boolean;
+  action?: { label: string; run: () => void };
+};
+
+export type ToastInput = Omit<Toast, "id" | "key"> & { key?: string };
+
+/** 自动消失的时间：成功/信息看清楚就够，失败留久一点（都能手动关）。 */
+const TOAST_TTL: Record<ToastKind, number> = { success: 6000, info: 4500, error: 12000 };
+
+/** 同时最多挂几条，再多就把最老的挤掉。 */
+const TOAST_LIMIT = 4;
+
+let toastSeq = 0;
+const toastTimers = new Map<string, number>();
+
 type StudioState = {
   /* ---- 库与进程数据 ---- */
   loading: boolean;
@@ -70,10 +102,16 @@ type StudioState = {
   zoom: Zoom;
   status: string;
   statusError: boolean;
+  /** 悬浮提示：动作的结果要看得见，而不是只在底部那行小字里换句话。 */
+  toasts: Toast[];
 
   /* ---- 动作 ---- */
   load: () => Promise<void>;
-  setStatus: (text: string, isError?: boolean) => void;
+  setStatus: (text: string, isError?: boolean, options?: { toast?: boolean }) => void;
+  pushToast: (toast: ToastInput, options?: { ttl?: number | null }) => void;
+  dismissToast: (id: string) => void;
+  /** 把一段文本放进剪贴板，并把结果作为提示说出来（导出成功的路径按钮用它）。 */
+  copyPath: (path: string) => Promise<void>;
 
   setFilter: (value: string) => void;
   setLibraryOpen: (open: boolean) => void;
@@ -98,6 +136,12 @@ type StudioState = {
 
   push: (options?: { quiet?: boolean }) => Promise<void>;
   copyCss: () => Promise<void>;
+  /** 导出当前主题为 zip（设计 + 图片 + 预览图 + CSS）。位置由用户在原生对话框里选。 */
+  exportTheme: (shell: HTMLElement | null) => Promise<void>;
+  /** 只导出预览图 PNG。 */
+  exportPreview: (shell: HTMLElement | null) => Promise<void>;
+  /** 导入一个导出包（zip 或解开的同名目录）。位置同样由用户选。 */
+  importTheme: () => Promise<void>;
 
   pickRegion: (id: string) => void;
   /** 把当前设计用到的图片读成 data: URL 放进缓存（只读缺的那些）。 */
@@ -235,8 +279,75 @@ export const useStudio = create<StudioState>((set, get) => {
     zoom: "fit",
     status: "正在读取主题库…",
     statusError: false,
+    toasts: [],
 
-    setStatus: (text, isError = false) => set({ status: text, statusError: isError }),
+    setStatus: (text, isError = false, options) => {
+      set({ status: text, statusError: isError });
+      // 失败必须自己冒出来：底部那行 10.5px 的小字没人盯。成功类消息默认只留在
+      // 状态行，需要提示的调用点自己 pushToast（内容更丰富，还能带按钮）。
+      if (options?.toast ?? isError) {
+        get().pushToast({ kind: isError ? "error" : "info", title: text });
+      }
+    },
+
+    pushToast(input, options) {
+      const key = input.key ?? `${input.kind}:${input.title}`;
+      const current = get().toasts;
+      const existing = current.find((toast) => toast.key === key);
+      const id = existing?.id ?? `toast-${(toastSeq += 1)}`;
+      const next: Toast = {
+        id,
+        key,
+        kind: input.kind,
+        title: input.title,
+        detail: input.detail,
+        mono: input.mono,
+        action: input.action,
+      };
+      set({
+        toasts: existing
+          ? current.map((toast) => (toast.id === id ? next : toast))
+          : [...current, next].slice(-TOAST_LIMIT),
+      });
+      const running = toastTimers.get(key);
+      if (running !== undefined) {
+        window.clearTimeout(running);
+        toastTimers.delete(key);
+      }
+      const ttl = options?.ttl === undefined ? TOAST_TTL[input.kind] : options.ttl;
+      if (ttl) {
+        toastTimers.set(
+          key,
+          window.setTimeout(() => {
+            toastTimers.delete(key);
+            get().dismissToast(id);
+          }, ttl),
+        );
+      }
+    },
+
+    dismissToast(id) {
+      const toast = get().toasts.find((item) => item.id === id);
+      if (!toast) return;
+      const running = toastTimers.get(toast.key);
+      if (running !== undefined) {
+        window.clearTimeout(running);
+        toastTimers.delete(toast.key);
+      }
+      set({ toasts: get().toasts.filter((item) => item.id !== id) });
+    },
+
+    async copyPath(path) {
+      try {
+        await invoke("clipboard.writeText", { text: path });
+        get().pushToast(
+          { key: "clipboard", kind: "info", title: "已复制路径到剪贴板", detail: path, mono: true },
+          { ttl: 3200 },
+        );
+      } catch (error) {
+        get().setStatus(`复制失败：${detail(error)}`, true);
+      }
+    },
 
     async load() {
       if (booted) return;
@@ -295,6 +406,10 @@ export const useStudio = create<StudioState>((set, get) => {
         await invoke("studio.apply", { id });
         set({ applied: id });
         get().setStatus(`已切换为宿主主题：${id}`);
+        get().pushToast(
+          { key: "studio.apply", kind: "success", title: `已切换为宿主主题：${id}` },
+          { ttl: 3200 },
+        );
       } catch (error) {
         get().setStatus(`切换失败：${detail(error)}`, true);
       }
@@ -312,6 +427,15 @@ export const useStudio = create<StudioState>((set, get) => {
         get().setStatus(
           `已应用「${theme.label}」· ` +
             (hasImage ? "含本地图片，应用窗口稍后换色" : "应用窗口即刻换色"),
+        );
+        get().pushToast(
+          {
+            key: "studio.apply",
+            kind: "success",
+            title: `已应用「${theme.label}」`,
+            detail: hasImage ? "含本地图片，应用窗口稍后换色" : "应用窗口已即刻换色",
+          },
+          { ttl: 4200 },
         );
       } catch (error) {
         get().setStatus(`应用失败：${detail(error)}`, true);
@@ -511,6 +635,15 @@ export const useStudio = create<StudioState>((set, get) => {
       try {
         await invoke("clipboard.writeText", { text: css });
         get().setStatus(`已复制「${theme.label}」的 CSS（${css.length} 字符）到剪贴板`);
+        get().pushToast(
+          {
+            key: "studio.clipboard",
+            kind: "success",
+            title: `已复制「${theme.label}」的 CSS`,
+            detail: `${css.length} 字符 · 给宿主用的 :root 那份`,
+          },
+          { ttl: 3600 },
+        );
       } catch (error) {
         get().setStatus(`复制失败：${detail(error)}`, true);
       }
@@ -522,8 +655,161 @@ export const useStudio = create<StudioState>((set, get) => {
       try {
         const library = (await invoke("studio.library")) as LibraryResponse;
         set({ images: asImages(library.images), orphans: asOrphans(library.orphans) });
+
       } catch (error) {
         get().setStatus(`刷新图片库失败：${detail(error)}`, true);
+      }
+    },
+    async exportTheme(shell) {
+      const theme = activeTheme(get());
+      if (!theme) return;
+      get().setStatus("正在生成预览图并打包…");
+      // 先挂一条常驻的进行中提示：打包成功与否都会原地替换它，用户不会漏看结果。
+      get().pushToast(
+        {
+          key: "studio.export",
+          kind: "info",
+          title: `正在导出「${theme.label}」…`,
+          detail: "生成预览图后，在弹出的系统对话框里选保存目录",
+        },
+        { ttl: null },
+      );
+      try {
+        const previewPng = await tryCapturePreview(shell);
+        const result = await invoke("studio.theme.export", { theme, previewPng });
+        if (result.canceled) {
+          get().setStatus("已取消导出");
+          get().pushToast(
+            { key: "studio.export", kind: "info", title: "已取消导出，没有写出文件" },
+            { ttl: 3200 },
+          );
+          return;
+        }
+        const path = String(result.path ?? "");
+        const size = humanSize(result.bytes);
+        const contents = `${size} · ${result.images ?? 0} 张图${result.preview ? " + 预览图" : ""}`;
+        get().setStatus(`已导出「${theme.label}」→ ${path}（${contents}）`);
+        get().pushToast({
+          key: "studio.export",
+          kind: "success",
+          title: `已导出「${theme.label}」`,
+          detail: `${path}\n${contents}`,
+          mono: true,
+          action: path ? { label: "复制路径", run: () => void get().copyPath(path) } : undefined,
+        });
+      } catch (error) {
+        const message = detail(error);
+        get().setStatus(`导出失败：${message}`, true, { toast: false });
+        get().pushToast({ key: "studio.export", kind: "error", title: "导出失败", detail: message });
+      }
+    },
+
+    async exportPreview(shell) {
+      const theme = activeTheme(get());
+      if (!theme) return;
+      get().setStatus("正在生成预览图…");
+      get().pushToast(
+        {
+          key: "studio.preview",
+          kind: "info",
+          title: "正在生成预览图…",
+          detail: "在弹出的系统对话框里选保存目录",
+        },
+        { ttl: null },
+      );
+      try {
+        const png = await tryCapturePreview(shell);
+        if (!png) {
+          const message = "这个宿主画不出预览画布（截图失败），导出已取消";
+          get().setStatus(message, true, { toast: false });
+          get().pushToast({
+            key: "studio.preview",
+            kind: "error",
+            title: "预览截图失败",
+            detail: message,
+          });
+          return;
+        }
+        const result = await invoke("studio.preview.save", { label: theme.label, png });
+        if (result.canceled) {
+          get().setStatus("已取消导出");
+          get().pushToast(
+            { key: "studio.preview", kind: "info", title: "已取消导出，没有写出文件" },
+            { ttl: 3200 },
+          );
+          return;
+        }
+        const path = String(result.path ?? "");
+        get().setStatus(`已导出预览图 → ${path}（${humanSize(result.bytes)}）`);
+        get().pushToast({
+          key: "studio.preview",
+          kind: "success",
+          title: `已导出「${theme.label}」的预览图`,
+          detail: `${path}\n${humanSize(result.bytes)} · 1280×800`,
+          mono: true,
+          action: path ? { label: "复制路径", run: () => void get().copyPath(path) } : undefined,
+        });
+      } catch (error) {
+        const message = detail(error);
+        get().setStatus(`导出预览图失败：${message}`, true, { toast: false });
+        get().pushToast({
+          key: "studio.preview",
+          kind: "error",
+          title: "导出预览图失败",
+          detail: message,
+        });
+      }
+    },
+
+    async importTheme() {
+      get().setStatus("正在读取导出包…");
+      get().pushToast(
+        {
+          key: "studio.import",
+          kind: "info",
+          title: "正在导入主题…",
+          detail: "在弹出的系统对话框里选导出包（zip，或解开的那个目录）",
+        },
+        { ttl: null },
+      );
+      try {
+        const result = await invoke("studio.theme.import");
+        if (result.canceled) {
+          get().setStatus("已取消导入");
+          get().pushToast(
+            { key: "studio.import", kind: "info", title: "已取消导入，主题库没有变化" },
+            { ttl: 3200 },
+          );
+          return;
+        }
+        const library = (await invoke("studio.library")) as LibraryResponse;
+        set({
+          themes: asThemes(library.themes),
+          images: asImages(library.images),
+          orphans: asOrphans(library.orphans),
+          active: result.imported?.id ?? get().active,
+        });
+        if (result.imported) {
+          void invoke("studio.state.put", { state: { active: result.imported.id } }).catch(() => {});
+        }
+        const parts = [`已导入「${result.imported?.label ?? "主题"}」`];
+        if (result.images) parts.push(`${result.images} 张图`);
+        if (result.renamed?.length) parts.push(`id 改为 ${result.renamed.join("、")}`);
+        if (result.missingImages?.length) parts.push(`缺 ${result.missingImages.length} 张图（已忽略）`);
+        get().setStatus(parts.join(" · "));
+        get().pushToast({
+          key: "studio.import",
+          kind: "success",
+          title: `已导入「${result.imported?.label ?? "主题"}」`,
+          detail: parts.slice(1).join("\n") || (result.imported ? humanSize(result.imported.bytes) : ""),
+          action: result.imported
+            ? { label: "应用这个主题", run: () => void get().applyCurrent() }
+            : undefined,
+        });
+      } catch (error) {
+        const message = detail(error);
+        get().setStatus(`导入失败：${message}`, true, { toast: false });
+        get().pushToast({ key: "studio.import", kind: "error", title: "导入失败", detail: message });
       }
     },
 
@@ -545,7 +831,17 @@ export const useStudio = create<StudioState>((set, get) => {
         } catch {
           /* 读不到就退回宿主 scheme 兜底 */
         }
-        get().setStatus(`已上传「${result.name}」· ${Math.round(result.bytes / 1024)}KB`);
+        const uploadSize = `${Math.max(1, Math.round(result.bytes / 1024))}KB`;
+        get().setStatus(`已上传「${result.name}」· ${uploadSize}`);
+        get().pushToast(
+          {
+            key: "studio.image",
+            kind: "success",
+            title: `已上传「${result.name}」`,
+            detail: `${uploadSize} · 已存进插件的图片目录，主题 CSS 引用它的绝对路径`,
+          },
+          { ttl: 3600 },
+        );
         return result.id;
       } catch (error) {
         get().setStatus(`上传失败：${detail(error)}`, true);

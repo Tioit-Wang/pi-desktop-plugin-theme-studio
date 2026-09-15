@@ -29,6 +29,38 @@ export type Channels = {
   "studio.image.remove": { payload: { id: string }; result: { ok: boolean; total: number } };
   "studio.image.prune": { payload: void; result: { ok: boolean; removed: number; total: number } };
   "studio.image.drop": { payload: { path: string }; result: { ok: boolean; removed: number } };
+  /** 导出当前主题：宿主弹原生目录对话框，插件往那里写 zip。 */
+  "studio.theme.export": {
+    payload: { theme: Theme; previewPng: string };
+    result: {
+      ok: boolean;
+      canceled?: boolean;
+      path?: string;
+      bytes?: number;
+      entries?: number;
+      images?: number;
+      preview?: boolean;
+    };
+  };
+  /** 只导出预览图 PNG。 */
+  "studio.preview.save": {
+    payload: { label: string; png: string };
+    result: { ok: boolean; canceled?: boolean; path?: string; bytes?: number };
+  };
+  /** 导入：位置也由用户在原生对话框里选，插件自己找 zip / 解开的目录。 */
+  "studio.theme.import": {
+    payload: void;
+    result: {
+      ok: boolean;
+      canceled?: boolean;
+      kind?: "zip" | "folder";
+      source?: string;
+      imported?: { id: string; label: string; bytes: number };
+      renamed?: string[];
+      images?: number;
+      missingImages?: string[];
+  };
+  };
   "studio.image.read": { payload: { id: string }; result: ReadImageResult };
   "clipboard.writeText": { payload: { text: string }; result: { ok: boolean } };
   "app.getAppearance": {
@@ -76,6 +108,8 @@ export function detail(error: unknown): string {
   const message = String(
     (error as { message?: string } | null)?.message ?? error ?? "未知错误",
   );
+  const hint = permissionHint(message);
+  if (hint) return hint;
   if (/reading '(upsert|remove|list|setTheme)'/.test(message)) {
     return (
       "宿主的运行时主题 API 不可用（pi.themes / pi.app.setTheme），需要 PI-Desktop ≥ 0.14.8；" +
@@ -107,6 +141,23 @@ export function asImages(value: unknown): ImageEntry[] {
 
 export function asOrphans(value: unknown): OrphanImage[] {
   return Array.isArray(value) ? (value as OrphanImage[]) : [];
+}
+
+/**
+ * 权限类报错的翻译。
+ *
+ * 宿主对每个 pi.fs.* / pi.agent.* 调用都查权限，缺了会返回 `missing permission: fs.read`
+ * 这种只有开发者看得懂的字符串。而权限变宽**不能靠热重载生效**（宿主会拒绝并提示重新
+ * 加载），所以这里必须把「下一步该做什么」直接写给用户。
+ */
+function permissionHint(message: string): string | null {
+  const match = /missing permission:\s*([a-z0-9.]+)/i.exec(message);
+  if (!match) return null;
+  return (
+    `缺少权限「${match[1]}」：本插件需要它才能做到这件事。` +
+    "请到插件页对本插件执行一次「加载开发插件」（重新指向原目录）并确认新权限 —— " +
+    "权限变更不能靠热重载生效，宿主会主动拒绝。"
+  );
 }
 
 /**

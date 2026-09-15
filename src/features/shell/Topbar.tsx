@@ -1,8 +1,16 @@
-import { PanelLeft, PanelRight } from "lucide-react";
+import { ArrowDownToLine, ClipboardCopy, FolderInput, Image as ImageIcon, Package, PanelLeft, PanelRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import * as core from "@/lib/theme-model";
@@ -57,6 +65,9 @@ export function Topbar({
   onToggleLibrary,
   onTogglePane,
   onCopy,
+  onExportTheme,
+  onExportPreview,
+  onImportTheme,
   onApply,
   onSave,
 }: {
@@ -75,6 +86,12 @@ export function Topbar({
   onToggleLibrary: () => void;
   onTogglePane: () => void;
   onCopy: () => void;
+  /** 导出当前主题为 zip（位置由原生对话框选）。 */
+  onExportTheme: () => void;
+  /** 只导出预览图 PNG。 */
+  onExportPreview: () => void;
+  /** 导入一个导出包。 */
+  onImportTheme: () => void;
   onApply: () => void;
   onSave: () => void;
 }) {
@@ -154,7 +171,29 @@ export function Topbar({
         </TooltipTrigger>
         <TooltipContent>{paneOpen ? "收起右侧面板" : "打开右侧面板"}</TooltipContent>
       </Tooltip>
-
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button disabled={disabled || gated} title="导出与导入">
+            <ArrowDownToLine className="size-3.5" /> 导出
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuLabel>导出当前主题「{themeLabel}」</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={onExportTheme}>
+            <Package className="size-3.5" /> 打包为 ZIP…
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onExportPreview}>
+            <ImageIcon className="size-3.5" /> 预览图 PNG…
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onCopy}>
+            <ClipboardCopy className="size-3.5" /> 复制 CSS
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={onImportTheme}>
+            <FolderInput className="size-3.5" /> 导入主题…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Button onClick={onCopy}>复制 CSS</Button>
       <Button disabled={disabled || gated} onClick={onApply}>
         应用

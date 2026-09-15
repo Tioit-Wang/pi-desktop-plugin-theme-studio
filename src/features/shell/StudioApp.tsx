@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 
+import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuditPanel } from "@/features/panels/AuditPanel";
 import { ImagesPanel } from "@/features/panels/ImagesPanel";
@@ -126,6 +127,9 @@ export function StudioApp() {
           onToggleLibrary={() => s.setLibraryOpen(!s.libraryOpen)}
           onTogglePane={() => (s.pane ? s.closePane() : s.openPane(s.lastPane))}
           onCopy={() => void s.copyCss()}
+          onExportTheme={() => void s.exportTheme(shellRef.current)}
+          onExportPreview={() => void s.exportPreview(shellRef.current)}
+          onImportTheme={() => void s.importTheme()}
           onApply={() => void s.applyCurrent()}
           onSave={() => {
             void s.push().then(() => s.applyCurrent());
@@ -199,7 +203,7 @@ export function StudioApp() {
                   defaults={s.defaults[base] ?? {}}
                   effective={effective}
                   onSetToken={s.setToken}
-                  onInvalid={(message) => s.setStatus(message, true)}
+                  onInvalid={(message) => s.setStatus(message, true, { toast: false })}
                 />
               ) : null}
               {s.pane === "images" ? (
@@ -227,6 +231,7 @@ export function StudioApp() {
         </div>
 
         <StatusBar text={statusText(s, theme?.label ?? "")} error={s.statusError} />
+        <Toaster />
 
         {/* 预览用的主题 CSS：选择器已经限定在 .pv-root[data-theme=…] 上 */}
         <style dangerouslySetInnerHTML={{ __html: css }} />

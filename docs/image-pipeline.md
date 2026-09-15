@@ -1,4 +1,4 @@
-# 图片链路：从选文件到铺满窗口
+﻿# 图片链路：从选文件到铺满窗口
 
 本文描述 **v0.6.0** 的实际行为，每处结论都对应代码位置。要回答四个问题：图片存在哪里、
 怎么被读取、怎么变成背景图、当前支持到什么程度。
@@ -97,7 +97,7 @@ registerTheme（main.js）→ pi.themes.upsert({ id, label, base, css })
 3. **整窗**同时写到 `:root` 和 `.app-shell`；面板的「一键透出」会把更深层区域底色设为
    `transparent`，整窗还会顺带放开 `bg-primary` / `bg-sidebar` / `bg-composer`。
 
-区域 → 选择器（`lib/theme-core.js` → `REGIONS`）：
+区域 → 选择器（`lib/theme-core.mjs` → `REGIONS`）：
 
 | 区域 | 选择器 | 能否设图 |
 | --- | --- | --- |
@@ -157,7 +157,10 @@ registerTheme（main.js）→ pi.themes.upsert({ id, label, base, css })
 | 上传 / 删除 / 清理 / 读成 data: URL | `main.js` → `putImage` / `removeImage` / `pruneImages` / `readImageBytes` |
 | 图片绝对路径与可用性 | `main.js` → `imageTarget` / `imageUsable` / `imagePath` |
 | 主题注册（唯一通道） | `main.js` → `registerTheme` / `refreshThemes` |
-| 面板选图、缩略图、图片库、一键透出 | `renderer/studio-app.js` → `imageUpload` / `imagePicker` / `imageLibrary` / `revealControl` |
-| 预览取图 | `renderer/studio-app.js` → `resolvePreviewImage` / `prefetchPreviewImages` |
-| 区域与选择器、序列化 | `lib/theme-core.js` → `REGIONS` / `serialize` |
+| 拖拽上传、缩略图、图片库 | `src/features/panels/ImageDropzone.tsx` / `ImagesPanel.tsx` |
+| 一键透出 | `src/store/studio-store.ts` → `revealUpper` |
+| 预览取图（data: 预读 + scheme 兜底） | `src/store/studio-store.ts` → `prefetchImages` / `src/lib/bridge.ts` → `imageUrl` |
+| 区域与选择器、序列化 | `lib/theme-core.mjs` → `REGIONS` / `serialize` |
+| 区域点选（按 REGIONS 贴标签） | `src/features/preview/region-picks.tsx` |
+| 宿主侧放行与改写 | `apps/desktop/electron/main/plugin-runtime.ts` → `externalThemeAsset` / `resolveThemeAssets`；`plugin-asset-protocol.ts` |
 | 宿主侧放行与改写 | `apps/desktop/electron/main/plugin-runtime.ts` → `externalThemeAsset` / `resolveThemeAssets`；`plugin-asset-protocol.ts` |

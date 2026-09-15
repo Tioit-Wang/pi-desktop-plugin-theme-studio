@@ -1,0 +1,54 @@
+/*
+ * 预览上属于**工坊自己**的那一层装饰：选中描边、区域角标、悬停提示。
+ *
+ * 与 host-replica.css 分开放：那份是照着宿主样式表抄的，改宿主时按文件回查；
+ * 这份是我们的交互层，宿主里没有对应物。
+ */
+
+.preview-shell [data-region] {
+  position: relative;
+}
+
+/* 悬停：让人先看到「这里是一块可点的区域」，点下去才变成实线。 */
+.preview-shell [data-region]:hover {
+  outline: 1px dashed color-mix(in oklab, var(--ui-accent) 55%, transparent);
+  outline-offset: -1px;
+}
+
+.preview-shell [data-region].picked {
+  outline: 1.5px solid var(--ui-accent);
+  outline-offset: -1px;
+}
+
+.preview-shell.picked {
+  outline: 1.5px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+/* 角标：内容取自 useRegionPicks 贴上的 data-label，所以和区域表永远一致。 */
+.preview-shell [data-region].picked::after,
+.preview-shell.picked::after {
+  position: absolute;
+  z-index: 8;
+  top: 4px;
+  left: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--ui-accent);
+  color: var(--ui-accent-ink);
+  content: attr(data-label);
+  font-size: 10px;
+  line-height: 16px;
+  pointer-events: none;
+}
+
+/* 整窗的描边画在边框上，角标跟着往外挪一点，别被 1px 描边压住。 */
+.preview-shell.picked::after {
+  top: 6px;
+  left: 6px;
+}
+
+/* 嵌套时角标不要互相压住：外层让出内层那一行。 */
+.preview-shell [data-region].picked [data-region].picked::after {
+  top: 22px;
+}

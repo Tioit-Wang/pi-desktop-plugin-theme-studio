@@ -185,6 +185,19 @@
     background: var(--ui-faint);
   }
 
+/*
+ * 面板顶部：宿主在最上面 var(--pi-plugin-titlebar-height) 里画窗口控制胶囊与拖拽带
+ * （preload/plugin-panel.ts 的 publishTitlebarHeight）。独立窗口是 46px，停靠视图是 0。
+ *
+ * 页面必须自己把这条带子让出来 —— 否则顶栏右侧的按钮正好落在胶囊底下，点不到。
+ * v3（paint-through）下页面不用自己声明 drag 区域：宿主按页面上可交互元素的矩形
+ * 在带子里挖洞（PAINT_THROUGH_NO_DRAG_SELECTOR），button/input/[tabindex] 自动可点。
+ */
+.panel-topbar {
+  padding-top: var(--pi-plugin-titlebar-height, 0px);
+  height: calc(48px + var(--pi-plugin-titlebar-height, 0px));
+}
+
   :focus-visible {
     outline: 2px solid color-mix(in oklab, var(--ui-accent) 70%, transparent);
     outline-offset: 1px;

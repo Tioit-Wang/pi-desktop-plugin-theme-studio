@@ -27,14 +27,14 @@
         <span class="chip" id="appliedChip" hidden>使用中 <b id="appliedLabel">—</b></span>
 
         <button class="iconbtn" id="btnLibrary" type="button" title="折叠主题库">◧</button>
-        <button class="iconbtn" id="btnSide" type="button" title="折叠编辑列">◨</button>
+        <button class="iconbtn" id="btnSide" type="button" title="收起右侧面板">◨</button>
         <button class="btn" id="btnCopy" type="button">复制 CSS</button>
         <button class="btn" id="btnApply" type="button">应用</button>
         <button class="btn primary" id="btnSave" type="button">保存并应用</button>
       </header>
 
       <div class="body">
-        <!-- ========================= 左：主题库 ========================= -->
+        <!-- ========================= 左：主题库（可折叠） ========================= -->
         <aside class="library" id="library">
           <div class="lib-search">
             <input type="text" id="libSearch" placeholder="搜索主题…" spellcheck="false" />
@@ -48,8 +48,14 @@
 
         <!-- ========================= 中：预览 ========================= -->
         <section class="canvas-col">
+          <!-- 折叠后只剩这颗左上角悬浮按钮，点它把主题库展开 -->
+          <button class="library-orb" id="libraryOrb" type="button" title="展开主题库" hidden>
+            <span aria-hidden="true">▤</span>
+          </button>
+
           <div class="canvas-bar">
             <span class="label">实时预览</span>
+            <span class="hintline">点预览里的区域即可编辑那一块</span>
             <span class="seg" id="viewSeg" style="margin-left: auto">
               <button class="on" data-view="chat" type="button">对话</button>
               <button data-view="settings" type="button">设置</button>
@@ -70,6 +76,9 @@
                 .pv-root 承载宿主默认调色板快照与当前设计的覆盖值；类名与真实
                 外壳一致，所以主题里按选择器写的规则（如 .sidebar-body）在这里
                 能真实生效。这份 CSS 由 <style id="pv-theme"> 注入。
+
+                区域点选靠 studio-app.js 给这些节点打上 data-region / data-label，
+                值来自 lib/theme-core.js 的 REGIONS（选择器与真实外壳一致）。
               -->
               <div class="preview-shell pv-root app-shell" id="previewShell" role="img"
                    aria-label="应用界面预览">
@@ -114,10 +123,37 @@
                       <i style="background: var(--ds-error)"></i>
                       <i style="background: var(--ds-purple)"></i>
                     </div>
-                    <div class="pv-composer">
-                      <div class="composer-shell">
-                        <span class="ph">描述你想改的观感…</span>
-                        <em>Agent</em><em>Sonnet 4.6</em><em class="solid">↑</em>
+
+                    <!--
+                      输入栏：结构与几何对齐真窗口的 composer.css
+                      （.composer-dock / .composer-stack / .composer-shell /
+                        .composer-input-wrap / .composer-input-stage /
+                        .composer-placeholder / .composer-input / .composer-toolbar /
+                        .composer-chip）。区域点选只落在 .composer-shell 上，
+                      也就是那个输入胶囊本身，不含下面整条底部。
+                    -->
+                    <div class="composer-dock">
+                      <div class="composer-stack">
+                        <div class="composer-shell">
+                          <div class="composer-input-wrap">
+                            <div class="composer-input-stage">
+                              <span class="composer-placeholder">描述你想改的观感…</span>
+                              <div class="composer-input" id="pvComposerInput" role="textbox"
+                                   aria-readonly="true">把左栏压暗一点，强调色换成冷紫</div>
+                            </div>
+                          </div>
+                          <div class="composer-toolbar">
+                            <span class="composer-tools">
+                              <em class="composer-tool">＋</em>
+                              <span class="composer-chip">Agent</span>
+                              <span class="composer-chip">Sonnet 4.6</span>
+                            </span>
+                            <span class="composer-tools">
+                              <em class="composer-tool">◔</em>
+                              <em class="composer-send">↑</em>
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -183,56 +219,32 @@
           </div>
         </section>
 
-        <!-- ========================= 右：编辑 ========================= -->
-        <aside class="side-col" id="sideCol">
-          <div class="side-tabs">
-            <button class="on" data-panel="token" type="button">Token</button>
-            <button data-panel="sidebar" type="button">侧边栏</button>
-            <button data-panel="surface" type="button">表面</button>
-            <button data-panel="images" type="button">图片</button>
-            <button data-panel="audit" type="button">检查</button>
-          </div>
-
-          <div class="side-panel on" data-panel-body="token">
-            <div class="searchwrap">
-              <input type="text" id="tokenSearch" placeholder="搜索 token（如 text-muted）" spellcheck="false" />
-            </div>
-            <div id="groups"></div>
-          </div>
-
-          <div class="side-panel" data-panel-body="sidebar">
-            <div class="pane">
+        <!-- ===================== 右：非常驻面板 + 悬浮球 ===================== -->
+        <div class="side-col" id="sideCol">
+          <!-- 面板里的内容：只在这里保留一份，打开哪个就把哪一块搬进 #panelBody -->
+          <div class="panes" id="panes" hidden>
+            <section class="pane" data-pane="region">
               <p class="note">
-                侧边栏背景走专用 token <code>--ds-bg-sidebar-image</code>：
-                <code>--ds-bg-sidebar</code> 必须保持为颜色，否则会破坏玻璃色罩、描边与
-                macOS vibrancy 的 <code>color-mix</code>。左栏是唯一开箱就能看到图片的区域。
+                点预览里的区域即可编辑那一块；区域按真实外壳的选择器定位，所以这里改的就是应用里对应那块。
               </p>
-              <div id="sidebarImage" class="stack"></div>
-            </div>
-          </div>
+              <div id="regions" class="stack"></div>
+            </section>
 
-          <div class="side-panel" data-panel-body="surface">
-            <div class="pane">
-              <p class="note">
-                每个表面可以单独设置背景色、渐变、图片、背景模糊与圆角。选择器取自真实外壳，
-                所以这里改的就是应用里对应那块。
-              </p>
-             <div id="regions" class="stack"></div>
-            </div>
-          </div>
+            <section class="pane" data-pane="token">
+              <div class="searchwrap">
+                <input type="text" id="tokenSearch" placeholder="搜索 token（如 text-muted）" spellcheck="false" />
+              </div>
+              <div id="groups"></div>
+            </section>
 
-          <div class="side-panel" data-panel-body="images">
-            <div class="pane">
+            <section class="pane" data-pane="images">
               <p class="note">
-                图片存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径。
-                单张上限 4MB（宿主限制），每次上传都是新文件。
+                图片存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径。单张上限 4MB（宿主限制）。
               </p>
               <div id="imageManager" class="stack"></div>
-            </div>
-          </div>
+            </section>
 
-          <div class="side-panel" data-panel-body="audit">
-            <div class="pane">
+            <section class="pane" data-pane="audit">
               <table class="audit-table">
                 <thead>
                   <tr><th>前景 / 背景</th><th>色对</th><th>比值</th><th>正文</th><th>大字</th></tr>
@@ -243,9 +255,25 @@
                 对比度按当前设计实时计算（WCAG 2.1），半透明前景会先合成到背景上再算。
                 低于 4.5:1 的组合标红但不阻止保存 —— 审美决定权在你；最弱文字与状态色按装饰层处理。
               </p>
-            </div>
+            </section>
+
+            <!-- 侧边栏的专用 token：左栏选中时并进区域面板一起显示 -->
+            <div id="sidebarImage" class="stack"></div>
           </div>
-        </aside>
+
+          <section class="panel" id="panel">
+            <header class="panel-head">
+              <span class="panel-title" id="panelTitle">区域</span>
+              <span class="spacer"></span>
+              <button class="iconbtn" id="panelClose" type="button" title="收起（Esc）">✕</button>
+            </header>
+            <div class="panel-body" id="panelBody"></div>
+          </section>
+
+          <div class="rail">
+            <div class="orbs" id="orbs"></div>
+          </div>
+        </div>
       </div>
 
       <div class="status" id="status">正在读取主题库…</div>

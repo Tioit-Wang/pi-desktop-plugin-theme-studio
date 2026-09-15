@@ -49,6 +49,10 @@
     view: "chat",
     zoom: "fit",
     filter: "",
+    // 当前选中的区域（整窗 / 左栏 / …），以及打开的悬浮面板
+    region: "shell",
+    pane: null,
+    libraryOpen: true,
     saveTimer: 0
   };
 
@@ -474,6 +478,25 @@
     renderLibrarySwatches();
     renderAudit();
     scheduleSave();
+  }
+
+  /**
+   * 改**当前选中区域**的一个字段，然后重画预览、面板与检查表。
+   *
+   * 区域由 state.region 决定（点预览选中的那块）；区域清空后就把 key 删掉，
+   * 主题里不会留空声明。
+   */
+  function commit(mutator) {
+    var theme = activeTheme();
+    if (!theme) return;
+    var id = state.region || "shell";
+    var regions = (theme.regions = theme.regions || {});
+    var region = regions[id] || (regions[id] = {});
+    mutator(region);
+    if (core.surfaceIsEmpty(region)) delete regions[id];
+    else regions[id] = region;
+    mutate(function () {});
+    if (state.pane === "region") renderRegionPanel();
   }
 
   function setToken(key, value) {
@@ -1510,208 +1533,7 @@ function previewThumb(design) {
     renderSidebarPanel();
   }
 
-   function regionBlock(definition, regions) {
-     var region = regions[definition.id] || (regions[definition.id] = {});
-     var set = countSurface(region);
-
-     var box = document.createElement("details");
-     box.className = "group depth-" + definition.depth;
-     box.open = set > 0 || definition.id === "shell";
-
-     var summary = document.createElement("summary");
-     summary.textContent = definition.label;
-     var count = document.createElement("em");
-     count.textContent = set ? set + " 项" : "透出下层";
-     summary.append(count);
-     box.append(summary);
-
-     var desc = document.createElement("p");
-     desc.className = "group-desc";
-     desc.textContent = (definition.selector || "(整窗根元素)") + " — " + definition.note;
-     box.append(desc);
-
-     function commit(mutator) {
-       mutator(region);
-       if (core.surfaceIsEmpty(region)) delete regions[definition.id];
-       else regions[definition.id] = region;
-       mutate(function () {});
-       renderSurfacePanel();
-     }
-
-     var seeThrough = region.fill === "transparent";
-     box.append(
-       toggleControl(
-         "透出下层",
-         seeThrough,
-         function (on) {
-           commit(function (target) {
-             if (on) target.fill = "transparent";
-             else delete target.fill;
-           });
-         },
-         "开启后这一块不再画底色，露出下面一层（整窗底图靠它才看得见）",
-       ),
-     );
-
-     if (!seeThrough) {
-       box.append(
-         colorControl(
-           "背景色",
-           region.fill || "",
-           "",
-           function (value) {
-             commit(function (target) {
-               if (value) target.fill = value;
-               else delete target.fill;
-             });
-           },
-           definition.note,
-         ),
-       );
-     }
-
-     var gradient = region.gradient || { on: false, angle: 160, from: "#00000000", to: "#00000000" };
-     box.append(
-       toggleControl("渐变", gradient.on === true, function (on) {
-         commit(function (target) {
-           target.gradient = Object.assign({}, gradient, { on: on });
-         });
-       }),
-     );
-     if (gradient.on) {
-       box.append(
-         rangeControl("角度", Number(gradient.angle) || 160, 0, 360, function (value) {
-           commit(function (target) {
-             target.gradient = Object.assign({}, gradient, { angle: value });
-           });
-         }),
-       );
-       box.append(
-         colorControl("起色", gradient.from, "#00000000", function (value) {
-           commit(function (target) {
-             target.gradient = Object.assign({}, gradient, { from: value || "transparent" });
-           });
-         }),
-       );
-       box.append(
-         colorControl("终色", gradient.to, "#00000000", function (value) {
-           commit(function (target) {
-             target.gradient = Object.assign({}, gradient, { to: value || "transparent" });
-           });
-         }),
-       );
-     }
-
-     if (definition.fillOnly === true) {
-       var why = document.createElement("p");
-       why.className = "note";
-       why.textContent =
-         "右栏只提供底色：内嵌的插件视图 / 浏览器是原生 WebContentsView，永远画在渲染进程之上，图片盖不住它。";
-       box.append(why);
-     } else {
-       var image = region.image || core.emptyImage();
-       box.append(
-         imagePicker(
-           image.image,
-           function (hash) {
-             commit(function (target) {
-               target.image = Object.assign({}, image, { on: true, image: hash });
-             });
-           },
-           function () {
-             commit(function (target) {
-               target.image = Object.assign({}, image, { on: false, image: "" });
-             });
-           },
-           renderSurfacePanel,
-         ),
-       );
-       if (image.on === true && image.image) {
-         box.append(revealControl(definition));
-
-         box.append(
-           selectControl(
-             "缩放",
-             image.size,
-             core.BACKGROUND_SIZES.map(function (size) {
-               return { value: size, label: size };
-             }),
-             function (value) {
-               commit(function (target) {
-                 target.image = Object.assign({}, image, { size: value });
-               });
-             },
-           ),
-         );
-         box.append(
-           selectControl(
-             "平铺",
-             image.repeat,
-             core.BACKGROUND_REPEATS.map(function (repeat) {
-               return { value: repeat, label: repeat };
-             }),
-             function (value) {
-               commit(function (target) {
-                 target.image = Object.assign({}, image, { repeat: value });
-               });
-             },
-           ),
-         );
-         box.append(
-           selectControl(
-             "位置",
-             image.position,
-             core.BACKGROUND_POSITIONS.map(function (position) {
-               return { value: position, label: position };
-             }),
-             function (value) {
-               commit(function (target) {
-                 target.image = Object.assign({}, image, { position: value });
-               });
-             },
-           ),
-         );
-       }
-     }
-
-     box.append(
-       rangeControl(
-         "背景模糊",
-         Number(region.blur) > 0 ? Number(region.blur) : 0,
-         0,
-         core.MAX_BLUR,
-         function (value) {
-           commit(function (target) {
-             if (value > 0) target.blur = value;
-             else delete target.blur;
-           });
-         },
-         "backdrop-filter: blur(Npx)；只在元素背后有内容时可见",
-       ),
-     );
-
-     box.append(
-       textControl(
-         "圆角",
-         region.radius || "",
-         "如 12px",
-         function (value) {
-           if (value && !/^\d{1,3}px$/.test(value)) {
-             setStatus("圆角必须形如 12px", true);
-             renderSurfacePanel();
-             return;
-           }
-           commit(function (target) {
-             if (value) target.radius = value;
-             else delete target.radius;
-           });
-         },
-         "border-radius",
-       ),
-     );
-
-     return box;
-   }
+  /* regionBlock 已删除：7 组平铺的旧表面面板被「点预览选区 → 一张卡片」取代。 */
 
 /**
     * 背景区域面板。
@@ -1719,25 +1541,10 @@ function previewThumb(design) {
     * 层级就是真实 DOM 的层级：整窗在最底，三栏盖住它，栏内区域再盖住栏。
     * 谁设了底色或图片就盖住自己那一块；没设（或显式「透出下层」）就露出下面一层。
     */
-   function renderSurfacePanel() {
-     var host = el("regions");
-     if (!host) return;
-     host.replaceChildren();
-     var theme = activeTheme();
-     if (!theme) return;
-     var regions = (theme.regions = theme.regions || {});
-
-     var note = document.createElement("p");
-     note.className = "note";
-     note.textContent =
-       "层级即真实 DOM 层级：整窗在最底，三栏盖住它，栏内区域再盖住栏。" +
-       "想让整窗底图露出来，就把上面那些栏设成「透出下层」。";
-     host.append(note);
-
-     for (var i = 0; i < core.REGIONS.length; i += 1) {
-       host.append(regionBlock(core.REGIONS[i], regions));
-     }
-   }
+  /** 旧入口保留：所有调用点都指向新的区域面板。 */
+  function renderSurfacePanel() {
+    renderRegionPanel();
+  }
 
   function countSurface(surface) {
     var n = 0;
@@ -1817,6 +1624,597 @@ function previewThumb(design) {
   }
 
   /* ==================================================================== *
+   * 布局：主题库折叠 / 悬浮球 / 悬浮面板
+   * ==================================================================== */
+
+  var lastPane = "region";
+
+  /** 主题库折叠：收起时只剩左上角一颗悬浮按钮。 */
+  function setLibraryOpen(open) {
+    state.libraryOpen = open !== false;
+    el("library").classList.toggle("collapsed", !state.libraryOpen);
+    el("libraryOrb").hidden = state.libraryOpen;
+    el("btnLibrary").title = state.libraryOpen ? "折叠主题库" : "展开主题库";
+  }
+
+  var ORBS = [
+    { id: "region", icon: "▣", label: "区域（点预览选）" },
+    { id: "token", icon: "◑", label: "Token" },
+    { id: "images", icon: "▤", label: "图片" },
+    { id: "audit", icon: "◇", label: "对比度检查" },
+  ];
+
+  var PANE_TITLES = { region: "区域", token: "Token", images: "图片", audit: "对比度检查" };
+
+  function renderOrbs() {
+    var host = el("orbs");
+    if (!host) return;
+    host.replaceChildren();
+    ORBS.forEach(function (orb) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "orb" + (state.pane === orb.id ? " on" : "");
+      button.title = orb.label;
+      button.setAttribute("aria-label", orb.label);
+      var icon = document.createElement("span");
+      icon.className = "orb-icon";
+      icon.textContent = orb.icon;
+      button.append(icon);
+      if (orb.id === "region") {
+        var dot = document.createElement("i");
+        dot.className = "orb-dot";
+        button.append(dot);
+      }
+      button.addEventListener("click", function () {
+        if (state.pane === orb.id) closePane();
+        else openPane(orb.id);
+      });
+      host.append(button);
+    });
+  }
+
+  /** 面板里显示的那一块内容（#panes 里各保留一份，打开时搬过去）。 */
+  function paneElement(id) {
+    return document.querySelector('#panes [data-pane="' + id + '"]');
+  }
+
+  function openPane(id) {
+    if (!PANE_TITLES[id]) return;
+    var body = el("panelBody");
+    var pane = paneElement(id);
+    if (!body || !pane) return;
+    state.pane = id;
+    lastPane = id;
+    // 先把上一块搬回隐藏区，再放新的 —— replaceChildren 会直接丢掉旧内容。
+    var stash = el("panes");
+    if (stash) {
+      while (body.firstChild) stash.append(body.firstChild);
+    }
+    body.replaceChildren(pane);
+    el("panelTitle").textContent = PANE_TITLES[id];
+    el("panel").classList.add("open");
+    el("sideCol").classList.remove("side-collapsed");
+    renderOrbs();
+  }
+
+  function closePane() {
+    var body = el("panelBody");
+    var panes = el("panes");
+    // 把内容搬回隐藏区，面板下次打开时再搬出来（DOM 只有一份）。
+    if (body && panes) {
+      while (body.firstChild) panes.append(body.firstChild);
+    }
+    state.pane = null;
+    el("panel").classList.remove("open");
+    renderOrbs();
+  }
+
+  /* ==================================================================== *
+   * 区域点选
+   * ==================================================================== */
+
+  /**
+   * 给预览副本打上区域标记。
+   *
+   * 选择器来自 lib/theme-core.js 的 REGIONS（.sidebar-body / .main-pane / …），
+   * 与真实外壳同源；整窗就是 .app-shell 自己。
+   */
+  function tagRegions() {
+    var shell = el("previewShell");
+    if (!shell) return;
+    shell.setAttribute("data-region", "shell");
+    shell.setAttribute("data-label", regionLabel("shell"));
+    for (var i = 0; i < core.REGIONS.length; i += 1) {
+      var region = core.REGIONS[i];
+      if (!region.selector) continue;
+      var nodes = shell.querySelectorAll(region.selector);
+      for (var j = 0; j < nodes.length; j += 1) {
+        nodes[j].setAttribute("data-region", region.id);
+        nodes[j].setAttribute("data-label", region.label);
+      }
+    }
+  }
+
+  function regionById(id) {
+    for (var i = 0; i < core.REGIONS.length; i += 1) {
+      if (core.REGIONS[i].id === id) return core.REGIONS[i];
+    }
+    return null;
+  }
+
+  function regionLabel(id) {
+    var region = regionById(id);
+    return region ? region.label : id;
+  }
+
+  /** 事件目标落在哪个区域上（最内层优先）。 */
+  function regionUnder(node) {
+    var current = node;
+    while (current && current !== document) {
+      if (current.getAttribute && current.getAttribute("data-region")) {
+        return current.getAttribute("data-region");
+      }
+      current = current.parentElement;
+    }
+    return null;
+  }
+
+  /** 上一层：栏内（标题栏/会话区/输入栏）→ 中栏；栏 → 整窗。 */
+  function regionParent(id) {
+    var region = regionById(id);
+    if (!region || region.depth === 0) return null;
+    if (region.depth >= 2) return "main";
+    return "shell";
+  }
+
+  function regionTrail(id) {
+    var trail = [];
+    var cursor = id;
+    while (cursor) {
+      trail.unshift(cursor);
+      cursor = regionParent(cursor);
+    }
+    return trail;
+  }
+
+  function paintRegionPicks() {
+    var shell = el("previewShell");
+    if (!shell) return;
+    var nodes = shell.querySelectorAll("[data-region]");
+    for (var i = 0; i < nodes.length; i += 1) {
+      var id = nodes[i].getAttribute("data-region");
+      nodes[i].classList.toggle("picked", id === state.region);
+    }
+    shell.classList.toggle("picked", state.region === "shell");
+  }
+
+  function pickRegion(id) {
+    state.region = id;
+    paintRegionPicks();
+    if (state.pane === "region") renderRegionPanel();
+  }
+
+  /* ==================================================================== *
+   * 区域面板：面包屑 + 五项 + 一键透出
+   * ==================================================================== */
+
+  function renderRegionPanel() {
+    var host = el("regions");
+    if (!host) return;
+    host.replaceChildren();
+    var theme = activeTheme();
+    if (!theme) return;
+    var definition = regionById(state.region) || regionById("shell");
+    var regions = (theme.regions = theme.regions || {});
+    var region = regions[definition.id] || (regions[definition.id] = {});
+
+    // 面包屑：整窗 › 中栏 › 输入栏
+    var crumb = document.createElement("div");
+    crumb.className = "crumb";
+    regionTrail(definition.id).forEach(function (id, index) {
+      if (index) {
+        var sep = document.createElement("span");
+        sep.className = "crumb-sep";
+        sep.textContent = "›";
+        crumb.append(sep);
+      }
+      var button = document.createElement("button");
+      button.type = "button";
+      button.textContent = regionLabel(id);
+      if (id === definition.id) button.className = "cur";
+      button.addEventListener("click", function () {
+        pickRegion(id);
+      });
+      crumb.append(button);
+    });
+    var jump = document.createElement("span");
+    jump.className = "crumb-spacer";
+    crumb.append(jump);
+    var shellBtn = document.createElement("button");
+    shellBtn.type = "button";
+    shellBtn.className = "crumb-jump";
+    shellBtn.textContent = "⌂ 整窗（底层）";
+    shellBtn.title = "最底层：点预览外面的空白、Alt+点任意区域，或这里";
+    shellBtn.addEventListener("click", function () {
+      pickRegion("shell");
+    });
+    crumb.append(shellBtn);
+    var up = regionParent(definition.id);
+    if (up) {
+      var upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.className = "crumb-jump";
+      upBtn.textContent = "↑ " + regionLabel(up);
+      upBtn.title = "等价于按 Esc";
+      upBtn.addEventListener("click", function () {
+        pickRegion(up);
+      });
+      crumb.append(upBtn);
+    }
+    host.append(crumb);
+
+    // 底色 / 渐变 / 图片 / 模糊 / 圆角
+    host.append(surfaceCard(definition, region));
+
+    // 左栏的图片走专用 token，把那一块放在同一张卡片下面
+    if (definition.id === "sidebar") {
+      var tokenHost = el("sidebarImage");
+      if (tokenHost) host.append(tokenHost);
+      renderSidebarPanel();
+    }
+  }
+
+  /** 一张区域卡片：五项控件 + 一键透出。 */
+  function surfaceCard(definition, region) {
+    var card = document.createElement("div");
+    card.className = "card";
+    var title = document.createElement("h4");
+    title.textContent = "背景 · " + definition.label;
+    card.append(title);
+
+    if (definition.fillOnly === true) {
+      var why = document.createElement("p");
+      why.className = "note";
+      why.textContent =
+        "右栏只提供底色：内嵌的插件视图 / 浏览器是原生 WebContentsView，永远画在渲染进程之上，图片盖不住它。";
+      card.append(why);
+    }
+
+    // 底色
+    var fill = document.createElement("input");
+    fill.type = "color";
+    fill.value = (core.isColorValue(region.fill) && region.fill.charAt(0) === "#"
+      ? region.fill.slice(0, 7)
+      : "#101214");
+    fill.addEventListener("input", function () {
+      commit(function (target) {
+        target.fill = fill.value + "cc";
+      });
+    });
+    card.append(controlRow("底色", fill, "带 alpha 的值会让下层透出来"));
+
+    // 渐变
+    var gradient = region.gradient && region.gradient.on === true
+      ? region.gradient
+      : { on: false, angle: 160, from: "#00000000", to: "#00000000" };
+    var gradientToggle = document.createElement("input");
+    gradientToggle.type = "checkbox";
+    gradientToggle.checked = gradient.on === true;
+    gradientToggle.addEventListener("change", function () {
+      commit(function (target) {
+        target.gradient = Object.assign({}, gradient, { on: gradientToggle.checked });
+      });
+    });
+    card.append(controlRow("渐变", gradientToggle));
+    if (gradient.on === true) {
+      card.append(rangeRow("角度", Number(gradient.angle) || 160, 0, 360, function (value) {
+        commit(function (target) {
+          target.gradient = Object.assign({}, gradient, { angle: value });
+        });
+      }));
+      card.append(colorRow("起始色", gradient.from, function (value) {
+        commit(function (target) {
+          target.gradient = Object.assign({}, gradient, { from: value || "transparent" });
+        });
+      }));
+      card.append(colorRow("结束色", gradient.to, function (value) {
+        commit(function (target) {
+          target.gradient = Object.assign({}, gradient, { to: value || "transparent" });
+        });
+      }));
+    }
+
+    // 图片（拖拽上传区；右栏不给图）
+    if (definition.fillOnly !== true) {
+      var imageTitle = document.createElement("h5");
+      imageTitle.className = "card-sub";
+      imageTitle.textContent = "背景图片";
+      card.append(imageTitle);
+      card.append(imageDropzone(definition.id));
+    }
+
+    // 模糊 / 圆角
+    card.append(rangeRow("背景模糊", Number(region.blur) > 0 ? Number(region.blur) : 0, 0, core.MAX_BLUR, function (value) {
+      commit(function (target) {
+        if (value > 0) target.blur = value;
+        else delete target.blur;
+      });
+    }, "backdrop-filter: blur(Npx)；只在元素背后有内容时可见"));
+    card.append(textRow("圆角", region.radius || "", "如 14px", function (value) {
+      commit(function (target) {
+        if (value) target.radius = value;
+        else delete target.radius;
+      });
+    }));
+
+    // 一键透出
+    var reveal = document.createElement("button");
+    reveal.type = "button";
+    reveal.className = "act";
+    reveal.textContent = "一键透出";
+    reveal.title = "把盖在这个区域上面的那些区域底色设为透明，下层图片才看得到";
+    reveal.addEventListener("click", function () {
+      var deeper = core.REGIONS.filter(function (item) {
+        return item.depth > definition.depth;
+      }).map(function (item) {
+        return item.id;
+      });
+      commit(function (target) {
+        target.regions = target.regions || {};
+        deeper.forEach(function (id) {
+          target.regions[id] = Object.assign({}, target.regions[id] || {}, {
+            fill: "transparent",
+          });
+        });
+        if (definition.id === "shell") {
+          // 宿主的 .app-shell / .sidebar / .composer-shell 各有自己的不透明底色，
+          // 值来自这三条 token：整窗要透出，连它们一起放开。
+          target.tokens = target.tokens || {};
+          target.tokens["bg-primary"] = "transparent";
+          target.tokens["bg-sidebar"] = "transparent";
+          target.tokens["bg-composer"] = "transparent";
+        }
+      });
+      setStatus(
+        "已把 " + deeper.length + " 个上层区域的底色设为透明 · " + deeper.join("、"),
+      );
+    });
+    var actions = document.createElement("div");
+    actions.className = "card-actions";
+    actions.append(reveal);
+    card.append(actions);
+    return card;
+  }
+
+  function controlRow(labelText, node, hint) {
+    // 注意别写成 `var row = row(...)`：局部变量会遮住同名的 row() 函数。
+    var wrap = row(labelText, hint);
+    wrap.append(node);
+    return wrap;
+  }
+
+  function rangeRow(labelText, value, min, max, onInput, hint) {
+    var input = document.createElement("input");
+    input.type = "range";
+    input.min = String(min);
+    input.max = String(max);
+    input.value = String(value);
+    var out = document.createElement("b");
+    out.textContent = String(value);
+    input.addEventListener("input", function () {
+      out.textContent = input.value;
+      onInput(Number(input.value));
+    });
+    var wrap = row(labelText, hint);
+    wrap.append(input, out);
+    return wrap;
+  }
+
+  function colorRow(labelText, value, onChange) {
+    var input = document.createElement("input");
+    input.type = "color";
+    input.value = core.isColorValue(value) && String(value).charAt(0) === "#" ? String(value).slice(0, 7) : "#000000";
+    input.addEventListener("input", function () {
+      onChange(input.value);
+    });
+    var wrap = row(labelText, "");
+    wrap.append(input);
+    return wrap;
+  }
+
+  function textRow(labelText, value, placeholder, onCommit) {
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "wide";
+    input.value = value || "";
+    input.placeholder = placeholder || "";
+    input.spellcheck = false;
+    input.addEventListener("change", function () {
+      onCommit(input.value.trim());
+    });
+    var wrap = row(labelText, "");
+    wrap.append(input);
+    return wrap;
+  }
+
+  /* ==================================================================== *
+   * 图片：拖拽上传区（不做勾选，也不预置任何图）
+   * ==================================================================== */
+
+  /**
+   * 拖拽上传区。
+   *
+   * 没有图时是一整块虚线区域：拖进来或用系统选择器选一张 PNG。有图时是
+   * 缩略图 + 文件名 + 大小 + 更换/不用。
+   */
+  function imageDropzone(regionId) {
+    var theme = activeTheme();
+    var region = theme && theme.regions ? theme.regions[regionId] : null;
+    var image = region && region.image ? region.image : null;
+    var currentId = image && image.on === true && image.image ? String(image.image) : "";
+
+    var zone = document.createElement("div");
+    zone.className = "dropzone" + (currentId ? " filled" : "");
+
+    var input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/png";
+    input.className = "visually-hidden";
+    input.addEventListener("change", function () {
+      var file = input.files && input.files[0];
+      input.value = "";
+      if (file) useImageFile(regionId, file);
+    });
+
+    if (currentId) {
+      var thumb = document.createElement("img");
+      thumb.className = "image-thumb image-thumb-lg";
+      var url = imageUrlFor(currentId);
+      if (url) thumb.src = url;
+      zone.append(thumb);
+      var meta = document.createElement("div");
+      meta.className = "image-meta";
+      var name = document.createElement("b");
+      var entry = imageNames(currentId);
+      name.textContent = entry ? entry.name : currentId;
+      meta.append(name);
+      var sub = document.createElement("small");
+      sub.textContent = entry
+        ? humanSize(entry.bytes) + " · 存在插件数据目录"
+        : "已在设计中引用";
+      meta.append(sub);
+      zone.append(meta);
+      var actions = document.createElement("div");
+      actions.className = "image-actions";
+      var replace = document.createElement("button");
+      replace.type = "button";
+      replace.className = "act";
+      replace.textContent = "更换";
+      replace.addEventListener("click", function (event) {
+        event.stopPropagation();
+        input.click();
+      });
+      var off = document.createElement("button");
+      off.type = "button";
+      off.className = "act";
+      off.textContent = "不用";
+      off.addEventListener("click", function (event) {
+        event.stopPropagation();
+        commit(function (target) {
+          target.image = Object.assign({}, image, { on: false, image: "" });
+        });
+      });
+      actions.append(replace, off);
+      zone.append(actions);
+    } else {
+      var icon = document.createElement("span");
+      icon.className = "dz-icon";
+      icon.textContent = "⤓";
+      var text = document.createElement("span");
+      text.className = "dz-text";
+      var main = document.createElement("b");
+      main.className = "dz-main";
+      main.textContent = "把 PNG 拖到这里";
+      var sub2 = document.createElement("small");
+      sub2.className = "dz-sub";
+      sub2.textContent = "或者点击选择文件 · 只收 PNG · 单张上限 4MB";
+      text.append(main, sub2);
+      zone.append(icon, text);
+    }
+
+    zone.append(input);
+    zone.addEventListener("click", function () {
+      input.click();
+    });
+    ["dragenter", "dragover"].forEach(function (type) {
+      zone.addEventListener(type, function (event) {
+        event.preventDefault();
+        zone.classList.add("over");
+      });
+    });
+    ["dragleave", "dragend"].forEach(function (type) {
+      zone.addEventListener(type, function () {
+        zone.classList.remove("over");
+      });
+    });
+    zone.addEventListener("drop", function (event) {
+      event.preventDefault();
+      zone.classList.remove("over");
+      var file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+      if (file) useImageFile(regionId, file);
+    });
+    return zone;
+  }
+
+  /** 收下一个文件：只收 PNG，然后走插件的上传通道（写进插件数据目录）。 */
+  function useImageFile(regionId, file) {
+    var looksPng = file.type === "image/png" || /\.png$/i.test(file.name);
+    if (!looksPng) {
+      setStatus("只收 PNG，请先转成 .png 再拖进来（" + file.name + "）", true);
+      return;
+    }
+    setStatus("正在上传「" + file.name + "」…");
+    file
+      .arrayBuffer()
+      .then(function (buffer) {
+        return invoke("studio.image.put", {
+          name: file.name,
+          bytes: new Uint8Array(buffer),
+          themeId: state.active,
+        });
+      })
+      .then(function (result) {
+        state.images = (state.images || []).concat([
+          {
+            id: result.id,
+            path: result.path,
+            bytes: result.bytes,
+            name: result.name,
+            addedAt: Date.now(),
+            owner: result.owner || state.active,
+          },
+        ]);
+        commit(function (target) {
+          target.image = {
+            on: true,
+            image: result.id,
+            size: "cover",
+            repeat: "no-repeat",
+            position: "center",
+          };
+        });
+        setStatus("已上传「" + result.name + "」（" + humanSize(result.bytes) + "）");
+        prefetchPreviewImages();
+        if (state.pane === "images") renderImageManager();
+      })
+      .catch(function (error) {
+        setStatus("上传失败：" + detail(error), true);
+      });
+  }
+
+  /* ==================================================================== *
+   * 缩放：只改观看倍率，预览的逻辑尺寸恒为 1280×800
+   * ==================================================================== */
+
+  function currentZoom() {
+    if (state.zoom === "fit") {
+      var wrap = el("canvasWrap");
+      return Math.min(1, (wrap.clientWidth - 26) / 1280);
+    }
+    var value = Number(state.zoom);
+    return isFinite(value) && value > 0 ? value : 1;
+  }
+
+  function renderZoomSeg() {
+    var seg = el("zoomSeg");
+    if (!seg) return;
+    var buttons = seg.querySelectorAll("button");
+    for (var i = 0; i < buttons.length; i += 1) {
+      var value = buttons[i].getAttribute("data-zoom");
+      buttons[i].classList.toggle("on", String(state.zoom) === value);
+    }
+  }
+  /* ==================================================================== *
    * 启动
    * ==================================================================== */
 
@@ -1841,8 +2239,13 @@ function previewThumb(design) {
         renderLibrary();
         renderTopbar();
         renderEditor();
-        renderSidebarPanel();
-        renderSurfacePanel();
+        // 新布局：区域标记 → 悬浮球 → 默认打开「区域」面板
+        tagRegions();
+        paintRegionPicks();
+        renderOrbs();
+        setLibraryOpen(true);
+        openPane("region");
+        renderRegionPanel();
         renderImageManager();
         paintPreview();
         renderAudit();
@@ -1891,27 +2294,65 @@ function previewThumb(design) {
       state.filter = el("libSearch").value;
       renderLibrary();
     });
+
+    // 主题库折叠：折叠后只剩左上角那颗悬浮按钮
+    el("btnLibrary").addEventListener("click", function () {
+      setLibraryOpen(!state.libraryOpen);
+    });
+    el("libraryOrb").addEventListener("click", function () {
+      setLibraryOpen(true);
+    });
+    el("btnSide").addEventListener("click", function () {
+      if (state.pane) closePane();
+      else openPane(lastPane || "region");
+    });
+    el("panelClose").addEventListener("click", closePane);
+
+    // 点预览里的区域：选中它并打开「区域」面板
+    el("previewShell").addEventListener("click", function (event) {
+      var id = event.altKey ? "shell" : regionUnder(event.target);
+      if (!id) return;
+      event.stopPropagation();
+      pickRegion(id);
+      openPane("region");
+    });
+    // 点预览外面的画布 = 选整窗
+    el("canvasWrap").addEventListener("click", function (event) {
+      if (event.target.closest("#previewShell")) return;
+      pickRegion("shell");
+      openPane("region");
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      if (state.pane) {
+        closePane();
+        return;
+      }
+      var up = regionParent(state.region);
+      if (up) pickRegion(up);
+    });
+
+    // Ctrl/⌘ + 滚轮缩放（只改观看倍率，预览逻辑尺寸不变）
+    el("canvasWrap").addEventListener("wheel", function (event) {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      var steps = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.25, 1.5, 2];
+      var current = currentZoom();
+      var next =
+        event.deltaY < 0
+          ? steps.filter(function (v) { return v > current + 0.001; })[0]
+          : steps.filter(function (v) { return v < current - 0.001; }).pop();
+      if (next === undefined) return;
+      state.zoom = next;
+      renderZoomSeg();
+      applyZoom();
+    });
     el("tokenSearch").addEventListener("input", renderEditor);
     el("btnNewTheme").addEventListener("click", newTheme);
     el("btnDuplicate").addEventListener("click", function () {
       if (state.active) duplicateTheme(state.active);
     });
 
-    var tabs = document.querySelectorAll(".side-tabs button");
-    for (var i = 0; i < tabs.length; i += 1) {
-      tabs[i].addEventListener("click", function (event) {
-        var button = event.currentTarget;
-        var name = button.getAttribute("data-panel");
-        for (var j = 0; j < tabs.length; j += 1) {
-          tabs[j].classList.toggle("on", tabs[j] === button);
-        }
-        var panels = document.querySelectorAll(".side-panel");
-        for (var k = 0; k < panels.length; k += 1) {
-          panels[k].classList.toggle("on", panels[k].getAttribute("data-panel-body") === name);
-        }
-        window.requestAnimationFrame(applyZoom);
-      });
-    }
 
     var views = document.querySelectorAll("#viewSeg button");
     for (var v = 0; v < views.length; v += 1) {
@@ -1937,18 +2378,7 @@ function previewThumb(design) {
       });
     }
 
-    el("btnLibrary").addEventListener("click", function (event) {
-      var node = el("library");
-      node.classList.toggle("collapsed");
-      event.currentTarget.classList.toggle("on", node.classList.contains("collapsed"));
-      applyZoom();
-    });
-    el("btnSide").addEventListener("click", function (event) {
-      var node = el("sideCol");
-      node.classList.toggle("collapsed");
-      event.currentTarget.classList.toggle("on", node.classList.contains("collapsed"));
-      applyZoom();
-    });
+    // 主题库与右侧面板的开合由上面那组处理器负责（这里不再重复绑定）。
 
     window.addEventListener("resize", applyZoom);
     window.addEventListener("keydown", function (event) {

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- v3 穿透式顶部 chrome：顶部 46px 是宿主拖拽带，页面自己的控件保持可点。 -->
+    <meta name="pi-plugin-chrome" content="v3" />
+    <title>主题工坊</title>
+    <link rel="stylesheet" href="./studio.css" />
+  </head>
+  <body>
+    <div class="studio">
+      <!-- ============================ 顶部条 ============================ -->
+      <header class="topbar">
+        <div class="identity">
+          <span class="strip" id="strip" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="tname" id="targetLabel">—</span>
+          <span class="badge" id="targetBase">—</span>
+          <span class="dirty-mark" id="dirtyMark">未改动</span>
+        </div>
+
+        <span class="spacer"></span>
+
+        <span class="chip" id="contrastChip">
+          <span class="dot" id="contrastDot"></span>最低正文对比度 <b id="contrastVal">—</b>
+        </span>
+        <span class="chip" id="appliedChip" hidden>使用中 <b id="appliedLabel">—</b></span>
+
+        <button class="iconbtn" id="btnLibrary" type="button" title="折叠主题库">◧</button>
+        <button class="iconbtn" id="btnSide" type="button" title="折叠编辑列">◨</button>
+        <button class="btn" id="btnCopy" type="button">复制 CSS</button>
+        <button class="btn" id="btnApply" type="button">应用</button>
+        <button class="btn primary" id="btnSave" type="button">保存并应用</button>
+      </header>
+
+      <div class="body">
+        <!-- ========================= 左：主题库 ========================= -->
+        <aside class="library" id="library">
+          <div class="lib-search">
+            <input type="text" id="libSearch" placeholder="搜索主题…" spellcheck="false" />
+          </div>
+          <div class="lib-list" id="libList"></div>
+          <div class="lib-foot">
+            <button class="btn" id="btnNewTheme" type="button">＋ 新建</button>
+            <button class="btn" id="btnDuplicate" type="button">复制</button>
+          </div>
+        </aside>
+
+        <!-- ========================= 中：预览 ========================= -->
+        <section class="canvas-col">
+          <div class="canvas-bar">
+            <span class="label">实时预览</span>
+            <span class="seg" id="viewSeg" style="margin-left: auto">
+              <button class="on" data-view="chat" type="button">对话</button>
+              <button data-view="settings" type="button">设置</button>
+              <button data-view="menu" type="button">菜单</button>
+            </span>
+            <span class="seg" id="zoomSeg">
+              <button class="on" data-zoom="fit" type="button">适应</button>
+              <button data-zoom="0.5" type="button">50%</button>
+              <button data-zoom="0.75" type="button">75%</button>
+              <button data-zoom="1" type="button">100%</button>
+            </span>
+          </div>
+
+          <div class="canvas-wrap" id="canvasWrap">
+            <div class="preview-frame" id="previewFrame">
+              <!--
+                真实外壳复刻：1280×800 逻辑尺寸，按 --preview-zoom 整体缩放。
+                .pv-root 承载宿主默认调色板快照与当前设计的覆盖值；类名与真实
+                外壳一致，所以主题里按选择器写的规则（如 .sidebar-body）在这里
+                能真实生效。这份 CSS 由 <style id="pv-theme"> 注入。
+              -->
+              <div class="preview-shell pv-root app-shell" id="previewShell" role="img"
+                   aria-label="应用界面预览">
+                <!-- 侧边栏 -->
+                <div class="sidebar">
+                  <div class="sidebar-header"><span></span>PI-Desktop<u>«</u></div>
+                  <div class="sidebar-body">
+                    <div class="pv-new"><b>＋</b> 新建会话</div>
+                    <div class="pv-search">⌕ 搜索会话</div>
+                    <div class="pv-group">项目</div>
+                    <div class="pv-row on"><i></i>主题工坊设计</div>
+                    <div class="pv-row"><i></i>渲染进程重构</div>
+                    <div class="pv-row"><i></i>插件市场联调</div>
+                    <div class="pv-group">临时</div>
+                    <div class="pv-row"><i></i>未命名会话</div>
+                    <div class="pv-side-foot"><em>⚙</em><em>◔</em><b>v0.14.8</b></div>
+                  </div>
+                </div>
+
+                <!-- 主区 -->
+                 <div class="pv-main main-pane pv-main-relative">
+                  <div class="pv-view" data-view="chat">
+                    <div class="main-titlebar">
+                      <span class="t">主题工坊设计</span>
+                      <span class="c"><span>⋯</span><span>⌘K</span></span>
+                    </div>
+                    <div class="thread-scroll">
+                      <div class="pv-u">侧栏压暗一点，强调色换成冷紫，背景加一层渐变</div>
+                      <div class="pv-a">
+                        <strong>已更新 5 个 token。</strong>侧栏降到 <code>#070b16</code>，强调色提到
+                        <code>#7fb0ff</code>，侧边栏背景换成光晕网格，正文对比度仍在 15:1 以上。
+                      </div>
+                      <div class="pv-tool">
+                        <b>ThemeStudio</b> themes/aurora.css
+                        <span class="diff"><span class="add">+12</span> <span class="del">−8</span></span>
+                      </div>
+                      <div class="pv-tool"><b>TaskWait</b> 视觉回归 <span class="diff">完成</span></div>
+                    </div>
+                    <div class="pv-status">
+                      <i style="background: var(--ds-success)"></i>
+                      <i style="background: var(--ds-warning)"></i>
+                      <i style="background: var(--ds-error)"></i>
+                      <i style="background: var(--ds-purple)"></i>
+                    </div>
+                    <div class="pv-composer">
+                      <div class="composer-shell">
+                        <span class="ph">描述你想改的观感…</span>
+                        <em>Agent</em><em>Sonnet 4.6</em><em class="solid">↑</em>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="pv-view" data-view="settings" hidden>
+                    <div class="main-titlebar"><span class="t">设置</span></div>
+                    <div class="pv-settings">
+                      <h3>外观</h3>
+                      <div class="pv-field">
+                        <span class="k"><b>主题</b><small>选择应用的配色</small></span>
+                        <span class="v" id="settingsThemeLabel">主题工坊</span>
+                      </div>
+                      <div class="pv-field">
+                        <span class="k"><b>语言</b><small>界面显示语言</small></span>
+                        <span class="v">简体中文</span>
+                      </div>
+                      <div class="pv-field">
+                        <span class="k"><b>界面字体</b><small>全局 font-family</small></span>
+                        <span class="v">系统默认</span>
+                      </div>
+                      <div class="pv-field">
+                        <span class="k"><b>工作面板</b><small>显示右侧工具列</small></span>
+                        <span class="pv-switch"></span>
+                      </div>
+                      <div class="pv-field">
+                        <span class="k"><b>减少动态效果</b><small>关闭过渡与动画</small></span>
+                        <span class="pv-switch off"></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="pv-menu" data-menu hidden>
+                    <div class="pv-menu-item hover">新会话</div>
+                    <div class="pv-menu-item dim">切换项目…</div>
+                    <div class="pv-menu-sep"></div>
+                    <div class="pv-menu-item">设置</div>
+                    <div class="pv-menu-item">键盘快捷键</div>
+                    <div class="pv-menu-sep"></div>
+                    <div class="pv-menu-item">退出</div>
+                  </div>
+                </div>
+
+                <!-- 工作面板列 -->
+                <div class="work-panel">
+                  <div class="work-panel-main">
+                    <div class="work-panel-header">
+                      <span class="pv-tab on">主题工坊</span>
+                      <span class="pv-tab">变更</span>
+                    </div>
+                    <div class="work-panel-body">
+                      <h5 id="dockTitle">Aurora</h5>
+                      <p id="dockMeta">dark 基底</p>
+                      <div class="pv-swatch" id="dockSwatch"></div>
+                      <div class="pv-line"></div>
+                      <div class="pv-line s"></div>
+                      <div class="pv-line"></div>
+                      <div class="pv-line s"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================= 右：编辑 ========================= -->
+        <aside class="side-col" id="sideCol">
+          <div class="side-tabs">
+            <button class="on" data-panel="token" type="button">Token</button>
+            <button data-panel="sidebar" type="button">侧边栏</button>
+            <button data-panel="surface" type="button">表面</button>
+            <button data-panel="images" type="button">图片</button>
+            <button data-panel="audit" type="button">检查</button>
+          </div>
+
+          <div class="side-panel on" data-panel-body="token">
+            <div class="searchwrap">
+              <input type="text" id="tokenSearch" placeholder="搜索 token（如 text-muted）" spellcheck="false" />
+            </div>
+            <div id="groups"></div>
+          </div>
+
+          <div class="side-panel" data-panel-body="sidebar">
+            <div class="pane">
+              <p class="note">
+                侧边栏背景走专用 token <code>--ds-bg-sidebar-image</code>：
+                <code>--ds-bg-sidebar</code> 必须保持为颜色，否则会破坏玻璃色罩、描边与
+                macOS vibrancy 的 <code>color-mix</code>。左栏是唯一开箱就能看到图片的区域。
+              </p>
+              <div id="sidebarImage" class="stack"></div>
+            </div>
+          </div>
+
+          <div class="side-panel" data-panel-body="surface">
+            <div class="pane">
+              <p class="note">
+                每个表面可以单独设置背景色、渐变、图片、背景模糊与圆角。选择器取自真实外壳，
+                所以这里改的就是应用里对应那块。
+              </p>
+             <div id="regions" class="stack"></div>
+            </div>
+          </div>
+
+          <div class="side-panel" data-panel-body="images">
+            <div class="pane">
+              <p class="note">
+                图片存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径。
+                单张上限 4MB（宿主限制），每次上传都是新文件。
+              </p>
+              <div id="imageManager" class="stack"></div>
+            </div>
+          </div>
+
+          <div class="side-panel" data-panel-body="audit">
+            <div class="pane">
+              <table class="audit-table">
+                <thead>
+                  <tr><th>前景 / 背景</th><th>色对</th><th>比值</th><th>正文</th><th>大字</th></tr>
+                </thead>
+                <tbody id="auditRows"></tbody>
+              </table>
+              <p class="note">
+                对比度按当前设计实时计算（WCAG 2.1），半透明前景会先合成到背景上再算。
+                低于 4.5:1 的组合标红但不阻止保存 —— 审美决定权在你；最弱文字与状态色按装饰层处理。
+              </p>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="status" id="status">正在读取主题库…</div>
+    </div>
+
+    <script src="../lib/theme-core.js"></script>
+    <script src="./appearance.js"></script>
+    <script src="./studio-app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "id": "pi.theme.studio",
+  "name": "主题工坊",
+  "version": "0.6.0",
+  "description": "PI-Desktop 主题工坊：内置 5 套配色，可视化调出属于自己的主题并一键应用。覆盖全部 56 个 --ds-* token；整窗 / 左栏 / 中栏 / 右栏 / 标题栏 / 会话区 / 输入栏各自可设底色、渐变、图片、模糊与圆角，带实时预览与 WCAG 对比度检查。图片用你自己选的本地 PNG，存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径（ADR 0255），所以换图不需要复制文件、也不会触发插件重载。",
+  "i18n": {
+    "en": {
+      "name": "Theme Studio",
+      "description": "The PI-Desktop theme studio: five built-in palettes plus a visual editor for building your own, applied with one click. Covers all 56 --ds-* tokens; the whole window, sidebar, main pane, work panel, title bar, thread and composer each take their own fill, gradient, image, blur and radius, with a live preview and WCAG contrast checks. Images are local PNGs you pick; they live in the plugin's own data directory and the theme CSS references them by absolute path (ADR 0255), so swapping one copies nothing and reloads nothing.",
+      "safetyNotes": "Theme designs live in this plugin's own settings and are registered through the host's runtime theme API. A PNG you pick is written into the plugin's own data directory (pi.plugin.getDataPath()/images/) and the theme CSS references it by absolute path. No files inside the plugin package, no network requests, no access to the workspace or to any other plugin's data."
+    },
+    "zh-CN": {
+      "name": "主题工坊",
+      "description": "PI-Desktop 主题工坊：内置 5 套配色，可视化调出属于自己的主题并一键应用。覆盖全部 56 个 --ds-* token；整窗 / 左栏 / 中栏 / 右栏 / 标题栏 / 会话区 / 输入栏各自可设底色、渐变、图片、模糊与圆角，带实时预览与 WCAG 对比度检查。图片用你自己选的本地 PNG，存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径（ADR 0255），所以换图不需要复制文件、也不会触发插件重载。",
+      "safetyNotes": "主题设计存在本插件自己的 settings 里，通过宿主的运行时主题 API 注册；你选的 PNG 写在插件的数据目录下（pi.plugin.getDataPath()/images/），主题 CSS 引用它的绝对路径。不写插件包内文件、不访问网络、不访问工作区或其他插件的数据。"
+    }
+  },
+  "author": "PI-Desktop",
+  "categories": [
+    "appearance",
+    "official"
+  ],
+  "changelog": "Release 0.6.0：图片改存插件数据目录，主题 CSS 直接引用绝对路径（宿主 ADR 0255），因此上传/换图/保存都不再改写插件包内文件 —— 开发插件监听器不会重载插件，面板窗口不再被关掉。右侧新增「图片」页：当前主题用到哪几张、谁在用、图片库、未登记文件、合计大小与清理集中在一处，区域里那一行改成缩略图 + 更换 / 不用。静态贡献通道（live.css / manifest assets）整套删除。R 0255），因此上传/换图/保存都不再改写插件包内文件 —— 开发插件监听器不会重载插件，面板窗口不再被关掉，预览从选完文件那一刻就是对的。静态贡献通道（live.css / manifest assets）整套删除。Release 0.5.0：图片只剩「你自己选的本地 PNG」一种来源，时间戳命名、一张图属于一个主题、删除即清引用。Release 0.5.0：图片只剩「你自己选的本地 PNG」一种来源 —— 删掉内置图形与全部「来源 / 槽位」选择，改用系统文件选择器；选完立即上传并按内容 sha256 落在 themes/img/，预览立刻以 plugin-asset:// 显示；图片文件被外部删掉时主题不再被宿主跳过（静态主题里的死引用在加载时自动剪掉，manifest 只声明真实存在的资源）。Release 0.3.0：改用 ADR 0249 的运行时主题 API —— 取消「槽位」概念与全部文件写入，主题改由 pi.themes.upsert / remove / list 在运行时管理，配合 pi.app.setTheme 一键应用；主题数量不再受限；侧边栏背景改用专用 token --ds-bg-sidebar-image（渐变或图片，图形以 data: URL 内联）；编辑器覆盖全部 56 个 --ds-* token 并支持透明度与颜色对比度（alpha 合成后计算）；支持按表面（标题栏 / 会话区 / 输入栏 / 工作面板列）设置背景色、渐变、图片、背景模糊与圆角。Release 0.2.0：补齐侧边栏 token、透明度、表面渐变与图片。Release 0.1.0：首个版本。",
+  "safetyNotes": "主题设计存在本插件自己的 settings 里，通过宿主的运行时主题 API 注册；你选的 PNG 写在插件的数据目录下（pi.plugin.getDataPath()/images/），主题 CSS 引用它的绝对路径。不写插件包内文件、不访问网络、不访问工作区或其他插件的数据。",
+  "main": "main.js",
+  "ui": {
+    "panel": "renderer/index.html",
+    "title": {
+      "en": "Theme Studio",
+      "zh-CN": "主题工坊"
+    },
+    "width": 1240,
+    "height": 800
+  },
+  "contributes": {
+    "themes": [
+      {
+        "id": "live",
+        "label": "主题工坊 Live",
+        "path": "themes/live.css",
+        "base": "dark"
+      },
+      {
+        "id": "live-light",
+        "label": "主题工坊 Live (Light)",
+        "path": "themes/live-light.css",
+        "base": "light"
+      }
+    ],
+    "views": [
+      {
+        "id": "studio",
+        "title": {
+          "en": "Theme Studio",
+          "zh-CN": "主题工坊"
+        },
+        "icon": "palette",
+        "entry": "renderer/index.html",
+        "order": 5
+      }
+    ],
+    "commands": [
+      {
+        "id": "themeStudio.open",
+        "title": "主题工坊：打开",
+        "keywords": [
+          "theme",
+          "studio",
+          "主题",
+          "工坊",
+          "配色",
+          "外观",
+          "token",
+          "渐变",
+          "背景"
+        ],
+        "category": "Appearance"
+      }
+    ]
+  },
+  "permissions": [
+    "ui.panel",
+    "ui.view",
+    "ui.theme"
+  ],
+  "engines": {
+    "piDesktop": ">=0.14.8"
+  },
+  "activationEvents": [
+    "onStartup",
+    "onCommand:themeStudio.open"
+  ]
+}

@@ -1,0 +1,4 @@
+# 插件在 Windows 上开发和运行，但这套文件是纯文本源码：统一用 LF 存，
+# 免得 checkout 时被 CRLF 转换，一次改一行变成整个文件都变。
+* text=auto eol=lf
+*.png binary

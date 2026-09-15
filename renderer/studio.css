@@ -269,7 +269,18 @@ button, input, select { font: inherit; color: inherit; }
 
 .lib-empty { padding: 18px 12px; color: var(--ui-faint); font-size: 11.5px; }
 
-/* ============================== 中：预览 ============================== */
+/* ============================== 中：预览 ==============================
+ * 预览是「真窗口的一个静态快照」，所以这一整段的每一条声明都能在宿主里找到出处。
+ * 文件对照（apps/desktop/src/styles/）：
+ *   chrome.css        .sidebar / .sidebar-header / .sidebar-body / .conversation-topbar
+ *   chat-shell.css    .main-pane / .chat-surface / .session-panes / .thread-*
+ *   composer.css      .composer-dock / .composer-stack / .composer-shell / .composer-*
+ *   messages.css      .message-row / .message-col / .message-bubble / .tool-activity-*
+ *   work-panel.css    .work-panel / .work-panel-main / .work-panel-header
+ *   prose.css         .prose-chat
+ * 宿主改度量时按这些文件回查。类名一律用宿主的，所以主题按真实选择器写的规则
+ * 在预览里同样生效（区域点选靠 studio-app.js 打的 data-region 标记）。
+ * ==================================================================== */
 
 .canvas-col { display: flex; flex: 1 1 auto; min-width: 0; flex-direction: column; }
 
@@ -309,215 +320,439 @@ button, input, select { font: inherit; color: inherit; }
   transform-origin: top left;
 }
 
- /* —— 外壳根：真实外壳的根类 .app-shell 也是主题可以调的「整窗背景」—— */
- .app-shell.pv-root { position: relative; }
+/* —— 外壳根：真实外壳的根类 .app-shell 也是主题可以调的「整窗背景」—— */
+.app-shell.pv-root { position: relative; }
 
- /* —— 侧边栏（真实选择器：.sidebar / .sidebar-header / .sidebar-body）—— */
- .sidebar {
+/* =========================== 左栏 ===========================
+ * 真实选择器：.sidebar / .sidebar-header / .sidebar-body。
+ * 宽度写死 275px —— 宿主 --ds-sidebar-width 是
+ * clamp(240px, 275px, min(520px, calc(100vw - 320px)))，在 1280 窗口下解出 275px。
+ * 底色的 longhand 三连与宿主同构（ADR 0249）：background 简写会把
+ * background-image 重置为 none，压掉侧边栏图片。
+ * 行内容（.pv-new / .pv-row …）是预览用的样例数据，不是宿主 DOM，几何按同一套
+ * token 取值。
+ * ============================================================ */
+.sidebar {
   display: flex;
   width: 275px;
   flex: 0 0 275px;
   flex-direction: column;
   min-height: 0;
-  padding: 8px 8px 6px;
-  /* 与宿主 chrome.css 同构（ADR 0249）：底色走 longhand，图片层单独一条 ——
-     background 简写会把 background-image 重置为 none，压掉侧边栏图片。 */
+  overflow: hidden;
   background-color: var(--ds-bg-sidebar, var(--ds-bg-primary));
   background-image: var(--ds-bg-sidebar-image, none);
   background-repeat: no-repeat;
   background-size: cover;
- }
- .sidebar-header {
+}
+.sidebar-header {
   display: flex;
+  height: var(--ds-toolbar-height);
+  flex: 0 0 var(--ds-toolbar-height);
   align-items: center;
-  gap: 7px;
-  padding: 5px 6px 11px;
+  gap: 4px;
+  padding: 0 8px;
   color: var(--ds-text-primary);
-  font-size: 12.5px;
-  font-weight: 600;
-  background-color: var(--ds-bg-sidebar, var(--ds-bg-primary));
-  background-image: var(--ds-bg-sidebar-image, none);
-  background-repeat: no-repeat;
-  background-size: cover;
- }
- .sidebar-header span { width: 16px; height: 16px; flex: 0 0 auto; border-radius: 5px; background: var(--ds-accent); }
- .sidebar-header u { margin-left: auto; color: var(--ds-text-faint); font-size: 12px; text-decoration: none; }
- .sidebar-body {
+  font-size: var(--text-base-plus);
+  font-weight: var(--font-weight-semibold);
+}
+.sidebar-header span { width: 16px; height: 16px; flex: 0 0 auto; border-radius: 5px; background: var(--ds-accent); }
+.sidebar-header u { margin-left: auto; color: var(--ds-text-faint); font-size: var(--text-sm); text-decoration: none; }
+.sidebar-body {
+  position: relative;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
+  padding: 0 8px 6px;
   background-color: var(--ds-bg-sidebar, var(--ds-bg-primary));
   background-image: var(--ds-bg-sidebar-image, none);
   background-repeat: no-repeat;
   background-size: cover;
- }
- .pv-new {
+}
+.pv-new {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
   padding: 7px 9px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--ds-tile);
   color: var(--ds-text-secondary);
-  font-size: 12px;
- }
- .pv-new b {
+  font-size: var(--text-sm);
+}
+.pv-new b {
   display: grid;
   width: 14px;
   height: 14px;
   place-items: center;
-  border-radius: 4px;
+  border-radius: var(--radius-3xs);
   background: var(--ds-tile-hover);
   color: var(--ds-text-secondary);
-  font-size: 9px;
- }
- .pv-search { margin-bottom: 6px; padding: 5px 9px; border-radius: 8px; color: var(--ds-text-faint); font-size: 11.5px; }
- .pv-group { padding: 9px 8px 4px; color: var(--ds-text-faint); font-size: 10.5px; }
- .pv-row { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 8px; color: var(--ds-text-secondary); font-size: 12px; }
- .pv-row i { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--ds-text-faint); }
- .pv-row.on { background: var(--ds-tile-hover); color: var(--ds-text-primary); }
- .pv-side-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 8px 6px 4px; color: var(--ds-text-muted); font-size: 11px; }
- .pv-side-foot em {
+  font-size: var(--text-3xs);
+}
+.pv-search { margin-bottom: 6px; padding: 5px 9px; border-radius: var(--radius-sm); color: var(--ds-text-muted); font-size: var(--text-xs-plus); }
+.pv-group { padding: 9px 8px 4px; color: var(--ds-text-faint); font-size: var(--text-3xs); }
+.pv-row { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: var(--radius-sm); color: var(--ds-text-secondary); font-size: var(--text-sm); }
+.pv-row i { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--ds-text-faint); }
+.pv-row.on { background: var(--ds-tile-hover); color: var(--ds-text-primary); }
+.pv-side-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 8px 6px 4px; color: var(--ds-text-muted); font-size: var(--text-xs); }
+.pv-side-foot em {
   display: grid;
   width: 18px;
   height: 18px;
   place-items: center;
-  border-radius: 5px;
+  border-radius: var(--radius-2xs);
   background: var(--ds-tile);
   font-style: normal;
- }
- .pv-side-foot b { margin-left: auto; color: var(--ds-text-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+}
+.pv-side-foot b { margin-left: auto; color: var(--ds-text-faint); font-weight: 400; font-variant-numeric: tabular-nums; }
 
- /* —— 主区（真实选择器：.main-titlebar / .thread-scroll / .composer-shell）—— */
- .pv-main { display: flex; flex: 1 1 auto; min-width: 0; flex-direction: column; background: var(--ds-bg-primary); }
- .main-titlebar {
+/* =========================== 中栏 ===========================
+ * 真实结构（AppShell → ChatSurface → ChatTranscript）：
+ *
+ *   .main-pane                        flex 列，自带 --chat-content/composer-max-width
+ *     .conversation-topbar            46px；宿主绝对定位浮在会话区之上，预览走在流内
+ *     .chat-surface   (position: relative)
+ *       .session-panes > .session-pane > .thread-wrap
+ *         .thread-scroll              滚动容器本身没有内边距
+ *           .thread-content           width: min(100%, 760px) 居中 + 留白
+ *       .composer-dock.composer-dock-docked
+ *                                     绝对贴底，内衬 0 24px 16px
+ *
+ * 顶部条在宿主里是 position: absolute 浮层；静态预览走在流内 —— 短会话、内容贴顶
+ * 时两者像素一致，而在流内不会被上滚的内容压掉半个字（真窗口靠「滚到最新」避开
+ * 这件事，静态快照没有那个状态）。
+ * =========================================================== */
+.pv-main {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 46px;
-  height: 46px;
-  padding: 0 14px;
-  background: var(--ds-bg-primary);
-  color: var(--ds-text-primary);
- }
- .main-titlebar .t { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
- .main-titlebar .c { display: flex; gap: 6px; margin-left: auto; }
- .main-titlebar .c span {
-  display: inline-flex;
-  height: 24px;
-  align-items: center;
-  padding: 0 9px;
-  border-radius: 999px;
-  background: var(--ds-tile);
-  color: var(--ds-text-muted);
-  font-size: 11px;
- }
- .thread-scroll { flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 6px 14px 0; background: var(--ds-bg-primary); }
- .pv-u {
-  width: fit-content;
-  max-width: 76%;
-  margin: 8px 0 14px auto;
-  padding: 8px 12px;
-  border-radius: 14px 14px 5px 14px;
-  background: var(--ds-tile-hover);
-  color: var(--ds-text-primary);
-  font-size: 12.5px;
- }
- .pv-a { margin-bottom: 10px; color: var(--ds-text-secondary); font-size: 12.5px; }
- .pv-a strong { color: var(--ds-text-primary); font-weight: 600; }
- .pv-a code {
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--ds-tile);
-  color: var(--ds-text-secondary);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11.5px;
- }
- .pv-tool {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  margin-bottom: 8px;
-  padding: 8px 11px;
-  border-radius: 9px;
-  background: var(--ds-tile);
-  color: var(--ds-text-muted);
-  font-size: 11.5px;
- }
- .pv-tool b {
-  color: var(--ds-text-secondary);
-  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  font-size: 11px;
-  font-weight: 500;
- }
- .pv-tool .diff { margin-left: auto; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 10.5px; }
- .pv-tool .add { color: var(--ds-success); }
- .pv-tool .del { color: var(--ds-error); }
- .pv-status { display: flex; gap: 6px; padding: 0 14px 10px; }
- .pv-status i { height: 5px; flex: 1 1 auto; border-radius: 999px; }
- .pv-composer { padding: 0 14px 14px; }
- .composer-shell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 8px 9px 12px;
-  border-radius: var(--ds-composer-radius, 16px);
-  background: var(--ds-bg-composer);
-  box-shadow: var(--ds-shadow-composer), 0 0 0 1px var(--ds-border-default);
- }
- .composer-shell .ph { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--ds-text-muted); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
- .composer-shell em {
-  padding: 4px 9px;
-  border-radius: 999px;
-  background: var(--ds-tile);
-  color: var(--ds-text-secondary);
-  font-size: 11px;
-  font-style: normal;
-  white-space: nowrap;
- }
- .composer-shell em.solid { background: var(--ds-accent); color: var(--ds-bg-primary); font-weight: 600; }
-
- /* —— 工作面板列（真实选择器：.work-panel / .work-panel-main / -header / -body）—— */
- .work-panel {
-  display: flex;
-  width: 320px;
-  flex: 0 0 320px;
+  flex: 1 1 auto;
+  min-width: var(--ds-main-pane-min-width, 450px);
   flex-direction: column;
   min-height: 0;
-  background: var(--ds-bg-dock);
-  box-shadow: inset 1px 0 0 var(--ds-border-default);
- }
- .work-panel-main { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
- .work-panel-header { display: flex; align-items: center; gap: 6px; flex: 0 0 46px; height: 46px; padding: 0 10px; background: var(--ds-bg-dock-raised); }
- .pv-tab { padding: 5px 10px; border-radius: 8px; color: var(--ds-text-muted); font-size: 11.5px; }
- .pv-tab.on { background: var(--ds-tile-hover); color: var(--ds-text-primary); }
- .work-panel-body { flex: 1 1 auto; min-height: 0; padding: 2px 12px 12px; overflow: hidden; }
- .work-panel-body h5 { margin: 0 0 3px; color: var(--ds-text-primary); font-size: 12px; font-weight: 600; }
- .work-panel-body p { margin: 0 0 10px; color: var(--ds-text-muted); font-size: 11px; }
- .pv-swatch { display: flex; gap: 4px; margin-bottom: 10px; }
- .pv-swatch i { height: 26px; flex: 1 1 0; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--ds-border-default); }
- .pv-line { height: 8px; margin-bottom: 6px; border-radius: 999px; background: var(--ds-tile); }
- .pv-line.s { width: 60%; }
+  background: var(--ds-bg-primary);
+  --chat-content-max-width: 760px;
+  --chat-composer-max-width: 768px;
+  /* 宿主由 Composer.tsx 实测后发布；预览里量出来是 111px 胶囊 + 16px 底衬，
+     交给 .thread-content 预留，最后一个回合才会正好停在胶囊上方。 */
+  --composer-dock-height: 127px;
+}
 
-/* —— 设置 / 菜单视图 —— */
+/* 对话 / 设置 / 菜单三个视图共用这块画布，视图容器只负责铺满。 */
+.pv-view { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+.pv-view[hidden] { display: none; }
+
+/* ---- 顶部条（chrome.css .conversation-topbar）---- */
+.conversation-topbar {
+  display: flex;
+  height: var(--ds-toolbar-height);
+  flex: 0 0 var(--ds-toolbar-height);
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  background: var(--ds-bg-primary);
+}
+.conversation-topbar .ct-left,
+.conversation-topbar .ct-right { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.conversation-topbar .ct-left { flex: 1 1 auto; margin-right: auto; }
+/* 右侧 36px 是宿主给固定工具列开关留的通道；预览里工具列是同一行的独立列，
+   宿主在工具列打开时也是 0（.ct-work-panel-open）。 */
+.conversation-topbar .ct-right { flex: 0 0 auto; justify-content: flex-end; padding-right: 0; }
+.conversation-topbar .ct-title-wrap { display: flex; flex: 1 1 auto; min-width: 0; align-items: center; overflow: hidden; white-space: nowrap; }
+.conversation-topbar .ct-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--ds-text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-compact);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-topbar .ct-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--ds-tile);
+}
+.conversation-topbar .ct-icon-btn {
+  display: inline-flex;
+  height: var(--ds-work-panel-toggle-size);
+  width: var(--ds-work-panel-toggle-size);
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm-plus);
+}
+
+/* ---- 会话面（chat-shell.css）---- */
+.chat-surface { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.session-panes { position: relative; display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.session-pane { display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.thread-wrap { position: relative; display: flex; min-height: 0; flex: 1 1 auto; flex-direction: column; }
+.thread-scroll {
+  position: relative;
+  min-height: 0;
+  flex: 1 1 auto;
+  /* 宿主是真滚动容器（overflow: auto + scrollbar-gutter: stable）。预览不会滚，
+     但同样保留那条 gutter —— 内容带因此和真窗口一样略微左移。 */
+  overflow: hidden;
+  scrollbar-gutter: stable;
+  /* 底色留给 .main-pane（或主题给「整窗/中栏」的填法）：会话区本身透明，
+     这样整窗底图才透得上来。 */
+}
+.thread-content {
+  width: min(100%, var(--chat-content-max-width, 760px));
+  margin: 0 auto;
+  padding: 20px 32px calc(var(--composer-dock-height, 228px) + 16px);
+}
+
+/* ---- 消息行（messages.css）---- */
+.message-row { display: flex; gap: 12px; padding: 12px 0; }
+.message-row.user { justify-content: flex-end; }
+.message-row.assistant { padding-top: 6px; padding-bottom: 14px; }
+.message-col { display: flex; width: 100%; min-width: 0; flex-direction: column; gap: 4px; }
+.message-row.user .message-col {
+  /* min(max-content, …) 是确定的收缩宽度；fit-content 会把 stretch 尺寸算进去，
+     一个 max-width:100% 的后代就能把气泡撑到上限。 */
+  width: min(max-content, 82%, 600px);
+  max-width: min(82%, 600px);
+  align-items: flex-end;
+}
+.message-row.assistant .message-col,
+.message-row.tool .message-col { width: min(100%, 720px); align-items: flex-start; }
+.message-row.user .message-bubble {
+  width: max-content;
+  max-width: 100%;
+  border-radius: var(--radius-lg-plus);
+  border-bottom-right-radius: var(--radius-xs);
+  background: color-mix(in oklab, var(--ds-text-primary) 8%, transparent);
+  padding: 10px 15px;
+  color: var(--ds-text-primary);
+  font-size: var(--text-base);
+  line-height: var(--leading-chat);
+}
+
+/* ---- 助手正文（prose.css .prose-chat）---- */
+.prose-chat {
+  color: var(--ds-text-primary);
+  font-size: var(--text-base);
+  line-height: var(--leading-prose);
+  overflow-wrap: break-word;
+  word-break: break-word;
+  text-wrap: pretty;
+}
+.prose-chat > :first-child { margin-top: 0; }
+.prose-chat > :last-child { margin-bottom: 0; }
+.prose-chat p { margin: 0.65em 0; }
+.prose-chat strong { color: var(--ds-text-primary); font-weight: var(--font-weight-semibold); }
+.prose-chat code {
+  background: color-mix(in oklab, var(--ds-text-primary) 7%, transparent);
+  border-radius: var(--radius-3xs);
+  padding: 0.14em 0.4em;
+  color: color-mix(in oklab, var(--ds-text-primary) 94%, var(--ds-accent-soft));
+  font-family: var(--font-mono);
+  font-size: var(--text-sm-plus);
+  font-variant-ligatures: none;
+}
+
+/* ---- 工具行（messages.css .tool-activity-*）----
+   真窗口的工具行是一行 12.5px 的静默行：没有卡片底色、没有描边，
+   只有图标 + 名称 + 一句摘要。卡片只属于 .has-subagents 这类分组。 */
+.tool-activity-group { width: 100%; min-width: 0; margin: 7px 0; }
+.tool-activity-header {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 26px;
+  align-items: center;
+  gap: 5px;
+  margin: 0 -3px;
+  padding: 2px 5px;
+  border-radius: var(--radius-sm);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-sm-plus);
+}
+.tool-activity-icon { display: inline-flex; flex: none; color: var(--ds-text-muted); }
+.tool-activity-label { flex: none; font-weight: var(--font-weight-medium); }
+.tool-activity-count {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ds-text-muted);
+  font-size: var(--text-xs-plus);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 输入栏（composer.css）---- */
+.composer-dock { display: flex; justify-content: center; width: 100%; }
+.composer-dock-docked { position: absolute; inset-inline: 0; bottom: 0; padding: 0 24px 16px; }
+.composer-stack {
+  display: flex;
+  width: min(100%, var(--chat-composer-max-width, 768px));
+  flex-direction: column;
+  align-items: stretch;
+}
+.composer-shell {
+  position: relative;
+  width: 100%;
+  border-radius: var(--ds-composer-radius, var(--radius-2xl));
+  background: var(--ds-bg-composer);
+  box-shadow: var(--ds-shadow-composer);
+}
+.composer-input-wrap {
+  position: relative;
+  display: flex;
+  min-height: 44px;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 10px 12px 0;
+}
+.composer-input-stage { position: relative; width: 100%; }
+.composer-placeholder {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding-top: 2px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  opacity: 0.72;
+  white-space: nowrap;
+}
+.composer-input {
+  width: 100%;
+  min-height: 3lh;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ds-text-primary);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: nowrap;
+  min-width: 0;
+  padding: 4px 8px 8px;
+}
+.composer-left,
+.composer-right { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; }
+.composer-toolbar .icon-btn {
+  display: inline-flex;
+  height: 28px;
+  min-width: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: var(--radius-full);
+  padding: 0 8px;
+  color: var(--ds-text-secondary);
+  font-size: var(--text-md);
+}
+.composer-chip {
+  display: inline-flex;
+  max-width: min(100%, 240px);
+  height: 20px;
+  align-items: center;
+  gap: 4px;
+  margin: 0 2px;
+  border-radius: var(--radius-md);
+  padding: 0 4px 0 6px;
+  background: var(--ds-tile-deep);
+  color: var(--ds-text-secondary);
+  font-size: var(--text-xs-plus);
+  line-height: var(--leading-compact);
+  white-space: nowrap;
+}
+.composer-mode-chip-face { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; gap: 6px; }
+.composer-toolbar .send-btn {
+  display: inline-flex;
+  height: 28px;
+  width: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--gray-0);
+  color: var(--gray-1000);
+  font-size: var(--text-md);
+}
+
+/* =========================== 右栏（工作面板）===========================
+ * 真实选择器：.work-panel / .work-panel-main / .work-panel-header。
+ * 宽度取宿主默认 360px（lib/work-panel-resize.ts 的 WORK_PANEL_DEFAULT_WIDTH）。
+ * 宿主这里刻意没有分隔线：相邻两栏的色调差就是它唯一的边界（D297）。
+ * 内嵌的插件视图 / 浏览器是原生 WebContentsView，永远画在渲染进程之上，所以
+ * 「右栏」这个区域只提供底色。
+ * =================================================================== */
+.work-panel {
+  display: flex;
+  width: 360px;
+  flex: 0 0 360px;
+  min-width: 0;
+  flex-direction: row;
+  min-height: 0;
+  background: var(--ds-bg-dock);
+}
+.work-panel-main { position: relative; display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; flex-direction: column; }
+.work-panel-header {
+  display: flex;
+  height: var(--ds-toolbar-height);
+  flex: 0 0 var(--ds-toolbar-height);
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  background: var(--ds-bg-dock-raised);
+}
+.pv-tab {
+  display: inline-flex;
+  min-width: 92px;
+  max-width: 180px;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--ds-text-muted);
+  font-size: var(--text-sm-plus);
+}
+.pv-tab.on { background: var(--ds-bg-hover); color: var(--ds-text-primary); }
+.work-panel-body { flex: 1 1 auto; min-height: 0; padding: 10px 12px 12px; overflow: hidden; }
+.work-panel-body h5 { margin: 2px 0 3px; color: var(--ds-text-primary); font-size: var(--text-sm); font-weight: var(--font-weight-semibold); }
+.work-panel-body p { margin: 0 0 10px; color: var(--ds-text-muted); font-size: var(--text-xs); }
+.pv-swatch { display: flex; gap: 4px; margin-bottom: 10px; }
+.pv-swatch i { height: 26px; flex: 1 1 0; border-radius: var(--radius-2xs); }
+.pv-line { height: 8px; margin-bottom: 6px; border-radius: var(--radius-full); background: var(--ds-tile); }
+.pv-line.s { width: 60%; }
+
+/* ---- 设置 / 菜单视图（样例数据；几何同样走 --ds-* 与尺度 token）---- */
 .pv-settings { flex: 1 1 auto; min-height: 0; padding: 4px 14px 14px; overflow: hidden; }
-.pv-settings h3 { margin: 8px 0 12px; color: var(--ds-text-primary); font-size: 15px; }
+.pv-settings h3 { margin: 8px 0 12px; color: var(--ds-text-primary); font-size: var(--text-base-plus); font-weight: var(--font-weight-semibold); }
 .pv-field { display: flex; align-items: center; gap: 12px; padding: 11px 0; }
 .pv-field + .pv-field { box-shadow: inset 0 1px 0 var(--ds-border-subtle); }
 .pv-field .k { flex: 1 1 auto; min-width: 0; }
-.pv-field .k b { display: block; color: var(--ds-text-primary); font-size: 12.5px; font-weight: 600; }
-.pv-field .k small { color: var(--ds-text-muted); font-size: 11px; }
+.pv-field .k b { display: block; color: var(--ds-text-primary); font-size: var(--text-sm-plus); font-weight: var(--font-weight-semibold); }
+.pv-field .k small { color: var(--ds-text-muted); font-size: var(--text-xs); }
 .pv-field .v {
   flex: 0 0 auto;
   padding: 5px 10px;
   border: 1px solid var(--ds-border-default);
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   color: var(--ds-text-secondary);
-  font-size: 11.5px;
+  font-size: var(--text-xs-plus);
 }
-.pv-switch { position: relative; width: 34px; height: 20px; flex: 0 0 34px; border-radius: 999px; background: var(--ds-accent); }
+.pv-switch { position: relative; width: 34px; height: 20px; flex: 0 0 34px; border-radius: var(--radius-full); background: var(--ds-accent); }
 .pv-switch::after {
   position: absolute;
   top: 2px;
@@ -528,8 +763,8 @@ button, input, select { font: inherit; color: inherit; }
   background: var(--ds-bg-primary);
   content: "";
 }
-.pv-switch.off { background: var(--ds-tile-deep); }
-.pv-switch.off::after { right: auto; left: 2px; background: var(--ds-text-faint); }
+.pv-switch.off { background: var(--ds-switch-track-off); }
+.pv-switch.off::after { right: auto; left: 2px; background: var(--ds-switch-knob-off); }
 
 .pv-menu {
   position: absolute;
@@ -538,11 +773,11 @@ button, input, select { font: inherit; color: inherit; }
   z-index: 2;
   width: 260px;
   padding: 4px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--ds-bg-elevated-opaque);
   box-shadow: 0 0 0 1px var(--ds-border-default), 0 16px 40px rgba(0, 0, 0, 0.4);
 }
-.pv-menu-item { padding: 8px 10px; border-radius: 8px; color: var(--ds-text-primary); font-size: 12px; }
+.pv-menu-item { padding: 8px 10px; border-radius: var(--radius-xs); color: var(--ds-text-primary); font-size: var(--text-sm); }
 .pv-menu-item.hover { background: var(--ds-tile-hover); }
 .pv-menu-item.dim { color: var(--ds-text-muted); }
 .pv-menu-sep { height: 6px; }
@@ -935,6 +1170,64 @@ p.note code {
   --motion-ease-in: cubic-bezier(0.4, 0, 1, 1);
   --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --font-scale: 1;
+
+  /* -------------------------------------------------------------------
+   * 宿主派生尺度快照 —— 同样来自 tokens.css（第 258-320 行）。
+   *
+   * 这一批不是 --ds-* token，主题不覆盖它们，但宿主的组件 CSS 拿它们算几何
+   * （气泡圆角、输入胶囊圆角、正文 14px、行高 1.45/1.55/1.6 …）。预览要跟真
+   * 窗口同构，就得有同一份取值，否则 var(--radius-xl) 这类引用会解析失败、
+   * 整条声明被丢掉（--ds-composer-radius: var(--radius-xl) 就是受害者）。
+   * ------------------------------------------------------------------- */
+  --radius-3xs: 4px;
+  --radius-2xs: 6px;
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-md-plus: 14px;
+  --radius-lg: 16px;
+  --radius-lg-plus: 18px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+  --radius-round: 50%;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --text-3xs: calc(10.5px * var(--font-scale));
+  --text-2xs: calc(11px * var(--font-scale));
+  --text-xs: calc(11px * var(--font-scale));
+  --text-xs-plus: calc(11.5px * var(--font-scale));
+  --text-sm: calc(12px * var(--font-scale));
+  --text-sm-plus: calc(12.5px * var(--font-scale));
+  --text-md: calc(13px * var(--font-scale));
+  --text-md-plus: calc(13.5px * var(--font-scale));
+  --text-base: calc(14px * var(--font-scale));
+  --text-base-plus: calc(15px * var(--font-scale));
+  --text-lg: calc(16px * var(--font-scale));
+  --text-lg-plus: calc(18px * var(--font-scale));
+  --text-xl: calc(20px * var(--font-scale));
+  --text-2xl: calc(28px * var(--font-scale));
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-medium-plus: 520;
+  --font-weight-strong: 560;
+  --font-weight-semibold: 600;
+  --leading-none: 1;
+  --leading-heading: 1.15;
+  --leading-tighter: 1.2;
+  --leading-tight: 1.25;
+  --leading-compact: 1.3;
+  --leading-compact-plus: 1.35;
+  --leading-normal: 1.4;
+  --leading-body: 1.45;
+  --leading-relaxed: 1.5;
+  --leading-chat: 1.55;
+  --leading-prose: 1.6;
+  --tracking-tighter: -0.03em;
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.02em;
+  --ds-main-pane-min-width: 450px;
 }
 
 .pv-root[data-theme="light"] {
@@ -1288,65 +1581,6 @@ p.note code {
   font-size: 10px;
   line-height: 16px;
   pointer-events: none;
-}
-.preview-shell [data-region] { position: relative; }
-.preview-shell .composer-dock { padding: 0 14px 12px; }
-.preview-shell .composer-stack { width: min(100%, 512px); margin: 0 auto; }
-.preview-shell .composer-shell {
-  position: relative;
-  border-radius: var(--ds-composer-radius, 16px);
-  background: var(--ds-bg-composer);
-  box-shadow: var(--ds-shadow-composer, 0 3px 8px rgba(0, 0, 0, 0.25));
-}
-.preview-shell .composer-input-wrap { display: flex; min-height: 40px; flex-direction: column; padding: 9px 12px 0; }
-.preview-shell .composer-input-stage { position: relative; width: 100%; }
-.preview-shell .composer-placeholder {
-  position: absolute;
-  inset: 0;
-  padding-top: 2px;
-  overflow: hidden;
-  color: var(--ds-text-secondary);
-  font-size: 12.5px;
-  opacity: 0.72;
-  white-space: nowrap;
-}
-.preview-shell .composer-input {
-  width: 100%;
-  color: var(--ds-text-primary);
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-.preview-shell .composer-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 4px 8px 8px;
-}
-.preview-shell .composer-tools { display: flex; align-items: center; gap: 6px; }
-.preview-shell .composer-tool { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 6px; color: var(--ds-text-muted); font-style: normal; }
-.preview-shell .composer-chip {
-  display: inline-flex;
-  height: 20px;
-  align-items: center;
-  padding: 0 7px;
-  border-radius: 8px;
-  background: var(--ds-tile-deep);
-  color: var(--ds-text-secondary);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.preview-shell .composer-send {
-  display: inline-flex;
-  width: 26px;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--ds-accent);
-  color: #fff;
-  font-size: 12px;
-  font-style: normal;
 }
 /* ==================================================================== *
  * 侧栏位置 v3：尺寸变量、左栏头部与抽屉、轨道与面板的 insets、窄窗自适应

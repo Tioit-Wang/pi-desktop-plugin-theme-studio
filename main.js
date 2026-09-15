@@ -25,8 +25,21 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const core = require("./lib/theme-core.js");
-const presets = require("./lib/presets.js");
+/*
+ * 共享主题模型是 ESM（lib/*.mjs）：渲染层直接 import，插件进程用动态 import
+ * 拿同一份实现 —— 单一真相源，面板预览与落盘注册不可能漂移。
+ *
+ * main.js 自己是 CommonJS（宿主 plugin-host-process.mjs 先 require，失败才退到
+ * import），所以这里用 let + 惰性加载，并在 onLoad 里先把它装上。
+ */
+let core = null;
+let presets = null;
+
+async function loadThemeModel() {
+  if (core && presets) return;
+  core = await import("./lib/theme-core.mjs");
+  presets = await import("./lib/presets.mjs");
+}
 
 const COMMAND_ID = "themeStudio.open";
 const STATE_KEY = "studioState";
@@ -820,6 +833,8 @@ async function writeState(payload) {
 /* ------------------------------------------------------------ 生命周期 */
 
 async function onLoad() {
+  // 主题模型是 ESM，先装上：后面每一个 handler 都依赖它。
+  await loadThemeModel();
   await pi.commands.register({
     id: COMMAND_ID,
     title: "主题工坊：打开",
@@ -887,6 +902,7 @@ async function onUnload() {
 }
 
 async function onPanelInvoke(channel, payload) {
+  if (!core) throw new Error("theme model not loaded yet");
   const handler = PANEL_HANDLERS[channel];
   if (!handler) throw new Error(`unsupported panel channel: ${channel}`);
   return handler(payload || {});

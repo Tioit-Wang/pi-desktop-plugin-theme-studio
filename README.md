@@ -31,6 +31,34 @@ pi.theme.studio
 └─ renderer/                构建产物：index.html + assets/*.js + assets/*.css
 ```
 
+
+## 让 Agent 帮你建主题
+
+装上之后，你可以直接用一句话让 Agent 干活，不用自己点面板：
+
+> 把 `C:\pics\scene.png` 作为整窗背景，内容区都透出来；强调色换成暖橙；新主题叫「黄昏」
+
+Agent 手上有四个工具（名字前面会带插件前缀）：
+
+| 工具 | 作用 |
+| --- | --- |
+| `theme_studio_list` | 有多少个主题、各自叫什么、哪个正在用、图片库、可设置的区域 id、全部可改的 token。Agent 动手前会先看这个。 |
+| `theme_studio_import_image` | 把用户给的 PNG **绝对路径**导入图片库，得到 id（同一张图要用在多处时才需要单独做）。 |
+| `theme_studio_write` | 新建或修改一个主题：token、区域底色/渐变/图片/模糊/圆角、左栏底图、以及「把上层透出来」。 |
+| `theme_studio_delete` | 删除主题（只在明确要求时用）。 |
+
+几件它已经替你想到的事：
+
+- **新建还是修改**：不传 `id` 就是新建（返回值里给出 id）；传了 `id` 就只改传进来的字段，其余原样保留。传 `applied` / `active` 表示「正在用的那个」/「面板里正在编辑的那个」。
+- **「要透明 / 透出来」**：区域 `fill: "transparent"` 让下层透出来；整窗还会连带放开 `bg-primary` / `bg-sidebar` / `bg-composer`；图放了却看不见就用 `reveal: true`（等价于面板的「一键透出」）。
+- **左栏**：底图用 `sidebar` 字段（宿主真正消费 `--ds-bg-sidebar-image` 的地方，开箱可见）；整体配色改 token `bg-sidebar`；`regions` 里的 `sidebar` 只管那块列表区域的底色/圆角。
+- **右栏不给图**：内嵌的插件视图是原生 `WebContentsView`，图片盖不住它，工具会直接说明而不是假装成功。
+- **图片校验**：只收 PNG（按魔数，不认扩展名）、绝对路径、单张 ≤ 4MB。
+- **内置预设**：改预设时会先复制一份再改，预设保持原样，返回值里的 `copiedFrom` 说明来源。
+- **不会静默成功**：传错的 token / 区域 / 颜色会返回带原因的 `{ ok: false, error }`，Agent 会自己改对再试。
+
+工具只在 **Agent 模式**可用 —— 它们没有声明 plan-safe 动作，所以按宿主规则在 Plan/Goal 模式下对模型不可见（写主题、删主题不该发生在计划阶段）。
+
 `renderer/` 是**构建产物**，不要手改 —— 改 `src/` 再构建。`lib/*.mjs` 是 ESM，插件进程与面板
 import 的是同一份实现，所以两者不可能漂移。
 

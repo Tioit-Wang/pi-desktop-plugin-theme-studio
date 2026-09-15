@@ -447,11 +447,9 @@ async function registeredThemeId(localId) {
      themes[index] = { ...theme, ...(themes[index].builtin ? { builtin: true } : {}) };
    }
 
-   // 两条落盘通道，工坊按设计内容自动选：
-   //   运行时注册 —— 立刻生效；CSS 里 url() 只能是 data:（ADR 0249），所以没有
-   //                 图片的主题走这条。
-   //   静态贡献   —— 写 themes/live.css；图片只能走这条（plugin-asset://），
-   //                 代价是插件重载后才生效（约 0.3s）。
+
+   // 引用到的图片必须真的存在、且文件还在盘上：主题 CSS 会用绝对路径指向它，
+   // 少了这一步，宿主会拿到一个指向空文件的 url()。
    const images = state.images || {};
    for (const hash of referencedImages(theme)) {
      if (!images[hash]) {
@@ -463,6 +461,7 @@ async function registeredThemeId(localId) {
        );
      }
    }
+
    // 只有一条通道：运行时注册。宿主现在会解析主题 CSS 里的绝对路径（ADR 0255），
    // 所以图片不再需要复制进插件包，也就不需要静态贡献与 manifest 声明。
    const result = { channel: "runtime", bytes: await registerTheme(theme, images) };
@@ -830,11 +829,697 @@ async function writeState(payload) {
   return { ok: true, bytes: await persist(merged) };
 }
 
+﻿/* ==================================================================== *
+ * Agent 工具
+ *
+ * 让 Agent 直接按用户的一句话生成/修改主题，例如
+ * 「把 C:\pics\bg.png 作为整窗背景，内容区透出来」「左栏换成冷紫渐变」。
+ *
+ * 四个工具，覆盖「看一眼 → 传图 → 写 → 删」：
+ *   theme_studio_list          结构总览（有多少个主题 / 哪个在用 / 区域表 / token 目录）
+ *   theme_studio_import_image  把用户给的 PNG 路径导入图片库，得到一个 id
+ *   theme_studio_write         新建或修改一个主题（tokens / 区域 / 左侧底图 / 透出）
+ *   theme_studio_delete        删除主题（可选顺带清理没用到的图片）
+ *
+ * 为什么这么少：schema 每一轮都要进模型的上下文，工具越多越贵；而一次 write 就能同时
+ * 改 token、区域、图片与透明，所以常见需求一轮就够。
+ *
+ * 语义是**声明式合并**，不是「一步步操作」：args 里出现哪个字段就改哪个，没出现的保持
+ * 原样。同一个工具因此既能新建也能微调，Agent 不用记两套语义。
+ *
+ * 与 manifest.json 的 contributes.agentTools 必须保持一致（宿主先按 manifest 声明
+ * 授权，运行时再按这里的描述注册）。两处都改了才算改完。
+ * ==================================================================== */
+
+/** 工具名（宿主会自动加插件前缀，这里用短名）。 */
+const AGENT_TOOL = {
+  list: "theme_studio_list",
+  importImage: "theme_studio_import_image",
+  write: "theme_studio_write",
+  remove: "theme_studio_delete",
+};
+
+/**
+ * 每个工具的 execute 都套这一层：校验失败返回 `{ok:false,error}` 而不是抛异常。
+ *
+ * 抛异常时模型只看到一句 "tool failed"，而结构化错误里带着 key/值/可用集合，它能自己
+ * 改对再试一次。四个工具在这件事上保持一致。
+ */
+function guarded(handler) {
+  return async (args, ctx) => {
+    try {
+      return await handler(args, ctx);
+    } catch (error) {
+      return { ok: false, error: String((error && error.message) || error) };
+    }
+  };
+}
+
+/** 区域表：给 Agent 一个稳定的 id 列表，省得它去猜选择器。 */
+function regionCatalog() {
+  return core.REGIONS.map((region) => ({
+    id: region.id,
+    label: region.label,
+    depth: region.depth,
+    note: region.note,
+    acceptsImage: region.fillOnly !== true,
+  }));
+}
+
+function regionDef(id) {
+  return core.REGIONS.find((region) => region.id === id) || null;
+}
+
+/** token 目录：key / 中文名 / 类型 / 分组，够 Agent 挑出该改哪几个。 */
+function tokenCatalog() {
+  const rows = [];
+  for (const group of core.TOKEN_GROUPS) {
+    for (const token of group.tokens) {
+      rows.push({ key: token.key, name: token.name, type: token.type, group: group.label });
+    }
+  }
+  return rows;
+}
+
+/**
+ * 接受 `bg-primary` 与 `--ds-bg-primary` 两种写法。
+ *
+ * 认不出的 key 直接抛错而不是悄悄丢掉：Agent 会照着返回的报错自己改对。
+ */
+function normalizeTokenKey(raw) {
+  const key = String(raw == null ? "" : raw).trim().replace(/^--ds-/, "");
+  if (!core.TOKEN_KEYS.includes(key)) {
+    throw new Error(`没有这个 token：--ds-${key || "(空)"}`);
+  }
+  return key;
+}
+
+/**
+ * 从 label 派生一个合法的主题 id。
+ *
+ * label 是纯中文时派生不出 slug，退回 `custom-N` —— 和面板里新建主题的命名一致，用户
+ * 在两边看到的是同一套 id。模型想指定 id 可以直接传。
+ */
+function deriveThemeId(label, taken) {
+  const slug = String(label || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+  if (/^[a-z]/.test(slug)) {
+    if (!taken.has(slug)) return slug;
+    let copy = 2;
+    while (taken.has(`${slug}-${copy}`)) copy += 1;
+    return `${slug}-${copy}`;
+  }
+  let index = 1;
+  while (taken.has(`custom-${index}`)) index += 1;
+  return `custom-${index}`;
+}
+
+function themeSummary(theme, applied) {
+  const regions = theme.regions || {};
+  return {
+    id: theme.id,
+    label: theme.label,
+    base: theme.base,
+    builtin: theme.builtin === true,
+    applied: applied === theme.id,
+    tokenCount: core.overriddenKeys(theme).length,
+    regions: Object.keys(regions).filter((id) => !core.surfaceIsEmpty(regions[id])),
+    sidebar: theme.sidebarImage && theme.sidebarImage.on === true ? theme.sidebarImage.kind : "none",
+  };
+}
+
+/**
+ * 「把这一块上面的东西透出来」。
+ *
+ * 宿主每一层都有自己的不透明底色（.app-shell / .sidebar / .composer-shell …），底图放
+ * 上去看不见是常态 —— 这一步按 DOM 层级把上层区域的底色设成透明；整窗还要连三个来源
+ * token 一起放开。与面板里的「一键透出」是同一套规则。
+ */
+function revealUpperInto(theme, regionId) {
+  const definition = regionDef(regionId);
+  if (!definition) throw new Error(`没有这个区域：${regionId}`);
+  const upper = core.REGIONS.filter((region) => region.depth > definition.depth);
+  const regions = { ...(theme.regions || {}) };
+  for (const region of upper) {
+    regions[region.id] = { ...(regions[region.id] || {}), fill: "transparent" };
+  }
+  theme.regions = regions;
+  if (definition.id === "shell") {
+    const tokens = { ...(theme.tokens || {}) };
+    tokens["bg-primary"] = "transparent";
+    tokens["bg-sidebar"] = "transparent";
+    tokens["bg-composer"] = "transparent";
+    theme.tokens = tokens;
+  }
+  return upper.map((region) => region.id);
+}
+
+/**
+ * 用户给的 PNG 路径 → 图片库里的条目。
+ *
+ * 只接受**绝对路径**（用户说的「这张图」几乎总是绝对路径），并且按魔数确认是 PNG、
+ * 不超过宿主给单个主题的 4MB 预算。写盘复用面板上传那条通道（putImage），所以两边的
+ * 校验、命名、登记完全一致。
+ */
+async function importImageFromPath(filePath, themeId) {
+  const raw = String(filePath || "").trim();
+  if (!raw) throw new Error("imagePath 是空的");
+  if (!path.isAbsolute(raw)) {
+    throw new Error(`imagePath 必须是绝对路径（收到的是相对路径：${raw}）`);
+  }
+  let stat;
+  try {
+    stat = fs.statSync(raw);
+  } catch (error) {
+    throw new Error(`读不到这个文件：${raw}（${error.code || error.message}）`);
+  }
+  if (!stat.isFile()) throw new Error(`这不是一个文件：${raw}`);
+  if (stat.size > MAX_ASSET_BYTES) {
+    throw new Error(
+      `图片 ${(stat.size / 1024 / 1024).toFixed(1)}MB，超过宿主给单个主题的 ` +
+        `${Math.round(MAX_ASSET_BYTES / 1024 / 1024)}MB 上限`,
+    );
+  }
+  const bytes = fs.readFileSync(raw);
+  const isPng =
+    bytes.length > 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47;
+  if (!isPng) {
+    throw new Error(`只接受 PNG：${path.basename(raw)} 不是 PNG（其它格式请先转成 .png）`);
+  }
+  const saved = await putImage({ bytes, name: path.basename(raw), themeId: themeId || "" });
+  return { id: saved.id, name: saved.name, bytes: saved.bytes };
+}
+
+/** 把一份「区域补丁」合进主题。返回做了什么，供工具回报给模型。 */
+async function applyRegionPatch(theme, entry) {
+  const id = String((entry && entry.region) || "").trim();
+  const definition = regionDef(id);
+  if (!definition) {
+    const known = core.REGIONS.map((region) => region.id).join(" / ");
+    throw new Error(`没有这个区域：${id || "(空)"}（可用：${known}）`);
+  }
+  const regions = { ...(theme.regions || {}) };
+  const region = { ...(regions[id] || {}) };
+  const changes = [];
+
+  if (entry.clearFill === true) {
+    delete region.fill;
+    changes.push("底色已恢复默认");
+  } else if (entry.fill !== undefined && entry.fill !== null) {
+    if (entry.fill === "") delete region.fill;
+    else region.fill = String(entry.fill);
+    changes.push(`底色=${region.fill || "默认"}`);
+  }
+
+  if (entry.clearGradient === true) {
+    delete region.gradient;
+    changes.push("渐变已移除");
+  } else if (entry.gradient) {
+    region.gradient = {
+      on: true,
+      angle: Number(entry.gradient.angle),
+      from: entry.gradient.from,
+      to: entry.gradient.to,
+    };
+    changes.push(`渐变 ${entry.gradient.from} → ${entry.gradient.to}`);
+  }
+
+  if (entry.clearImage === true) {
+    region.image = core.emptyImage();
+    changes.push("图片已移除");
+  } else if (entry.imagePath || entry.imageId) {
+    if (definition.fillOnly === true) {
+      throw new Error(
+        `${definition.label}不接受背景图片：内嵌的插件视图是原生视图，永远画在渲染进程之上，图片盖不住它。只给它 fill 底色。`,
+      );
+    }
+    if (definition.id === "sidebar") {
+      // 两条路都能画左栏，但只有 sidebar 字段是宿主真正消费的位置 —— 只留一条，
+      // 免得 Agent（和人）在两处之间反复试。
+      throw new Error(
+        "左栏背景图请用顶层 sidebar 字段：{ sidebar: { kind: \"image\", imagePath } }。" +
+          "regions 里的 sidebar 只用于底色 / 模糊 / 圆角（它对应左栏列表那一块，不是整列）。",
+      );
+    }
+    const image = entry.imagePath
+      ? await importImageFromPath(entry.imagePath, theme.id)
+      : { id: String(entry.imageId).trim(), name: entry.imageId };
+    region.image = {
+      on: true,
+      image: image.id,
+      size: entry.imageSize || "cover",
+      repeat: entry.imageRepeat || "no-repeat",
+      position: entry.imagePosition || "center",
+    };
+    changes.push(`图片=${image.name || image.id}`);
+  }
+
+  if (entry.blur !== undefined && entry.blur !== null) {
+    const blur = Number(entry.blur);
+    if (!isFinite(blur) || blur <= 0) delete region.blur;
+    else region.blur = Math.min(core.MAX_BLUR, Math.round(blur));
+    changes.push(`模糊=${region.blur || 0}`);
+  }
+
+  if (entry.radius !== undefined && entry.radius !== null) {
+    const radius = String(entry.radius).trim();
+    if (!radius) delete region.radius;
+    else region.radius = radius;
+    changes.push(`圆角=${region.radius || "默认"}`);
+  }
+
+  if (core.surfaceIsEmpty(region)) delete regions[id];
+  else regions[id] = region;
+  theme.regions = regions;
+
+  let revealed = [];
+  if (entry.reveal === true) {
+    revealed = revealUpperInto(theme, id);
+    changes.push(`已把上层透出（${revealed.join("、")}）`);
+  }
+  return { id, label: definition.label, changes, revealed };
+}
+
+/**
+ * 目标解析：`id` 可以是字面量 id，也可以是 `applied`（当前应用中的）/ `active`
+ * （面板里正在编辑的）两个别名 —— 别名只在库里没有同名 id 时才生效。
+ */
+function resolveTargetId(rawId, themes, state) {
+  const literal = themes.find((theme) => theme.id === rawId);
+  if (literal) return literal.id;
+  if (rawId === "applied" || rawId === "active") {
+    const key = rawId === "applied" ? "applied" : "active";
+    const current = String(state[key] || "").trim();
+    const theme = current ? themes.find((item) => item.id === current) : null;
+    if (theme) return theme.id;
+    throw new Error(
+      rawId === "applied"
+        ? "现在没有应用中的插件主题（用的是宿主自带配色）。先调 theme_studio_list 拿 id。"
+        : "面板里还没有正在编辑的主题。先调 theme_studio_list 拿 id。",
+    );
+  }
+  const known = themes.map((theme) => theme.id).join(" / ");
+  throw new Error(`主题不存在：${rawId}。现有：${known}（要新建就别传 id）`);
+}
+
+/** 一份「主题补丁」→ 落盘注册。新建与修改走的是同一条路。 */
+async function writeThemeFromSpec(args) {
+  const input = args && typeof args === "object" ? args : {};
+  const state = await readState();
+  const themes = Array.isArray(state.themes) && state.themes.length ? state.themes : presets.clone();
+  const taken = new Set(themes.map((theme) => theme.id));
+
+  const requestedId = String(input.id || "").trim();
+  const report = {
+    tokensSet: [],
+    tokensCleared: [],
+    regions: [],
+    revealed: [],
+    images: [],
+    sidebar: "",
+  };
+  let theme;
+  let created = false;
+  let copiedFrom = "";
+
+  if (requestedId) {
+    const targetId = resolveTargetId(requestedId, themes, state);
+    const source = themes.find((item) => item.id === targetId);
+    if (source.builtin === true) {
+      // 内置预设是用户挑颜色时的参照物：改它等于把参照物也改了。这里先复制一份，
+      // 把改动落在副本上，并在返回值里说清来源（用户想的就是「改这套预设」）。
+      created = true;
+      copiedFrom = source.id;
+      // label 用「Aurora 副本」，于是 id 派生成 aurora-2 —— 一眼看得出它从哪来。
+      const label = String(input.label || "").trim().slice(0, 64) || `${source.label} 副本`;
+      theme = {
+        ...JSON.parse(JSON.stringify(source)),
+        id: deriveThemeId(label, taken),
+        label,
+        builtin: false,
+      };
+    } else {
+      theme = JSON.parse(JSON.stringify(source));
+    }
+  } else {
+    created = true;
+    const label = String(input.label || "").trim().slice(0, 64) || "Agent 主题";
+    theme = {
+      id: deriveThemeId(input.label || "", taken),
+      label,
+      base: input.base === "light" ? "light" : "dark",
+      tokens: {},
+      sidebarImage: { on: false, kind: "none" },
+      regions: {},
+    };
+  }
+
+  if (input.label && !created) {
+    theme.label = String(input.label).trim().slice(0, 64) || theme.label;
+  }
+  if (input.base === "light" || input.base === "dark") theme.base = input.base;
+
+  // token：值给 null / 空串 = 恢复宿主默认（删掉覆盖）。
+  const tokens = { ...(theme.tokens || {}) };
+  for (const [rawKey, value] of Object.entries(input.tokens || {})) {
+    const key = normalizeTokenKey(rawKey);
+    if (value === null || value === undefined || value === "") {
+      delete tokens[key];
+      report.tokensCleared.push(`--ds-${key}`);
+      continue;
+    }
+    const text = String(value);
+    if (!core.isTokenValueAllowed(key, text)) {
+      throw new Error(`--ds-${key} 不接受这个值：${text.slice(0, 60)}`);
+    }
+    tokens[key] = core.normalizeColor(text);
+    report.tokensSet.push(`--ds-${key}=${tokens[key]}`);
+  }
+  theme.tokens = tokens;
+
+  // 左栏底图走专用 token（--ds-bg-sidebar-image）：这是宿主真正消费的位置，也是唯一
+  // 开箱可见的底图位。
+  if (input.sidebar) {
+    const sidebar = input.sidebar;
+    if (sidebar.kind === "none") {
+      theme.sidebarImage = { on: false, kind: "none" };
+      report.sidebar = "已设为纯色";
+    } else if (sidebar.kind === "gradient") {
+      theme.sidebarImage = {
+        on: true,
+        kind: "gradient",
+        angle: Number(sidebar.angle),
+        from: sidebar.from,
+        to: sidebar.to,
+      };
+      report.sidebar = `渐变 ${sidebar.from} → ${sidebar.to}`;
+    } else if (sidebar.kind === "image") {
+      if (!sidebar.imagePath && !sidebar.imageId) {
+        throw new Error(
+          'sidebar.kind="image" 需要 imagePath（用户给的 PNG 绝对路径）或 imageId（图片库 id）',
+        );
+      }
+      const image = sidebar.imagePath
+        ? await importImageFromPath(sidebar.imagePath, theme.id)
+        : { id: String(sidebar.imageId).trim(), name: sidebar.imageId };
+      theme.sidebarImage = { on: true, kind: "image", image: image.id };
+      if (image.name) report.images.push(image.name);
+      report.sidebar = `图片=${image.name || image.id}`;
+    } else {
+      throw new Error('sidebar.kind 只能是 "none" / "gradient" / "image"');
+    }
+  }
+
+  for (const entry of input.regions || []) {
+    report.regions.push(await applyRegionPatch(theme, entry));
+  }
+  for (const region of report.regions) for (const id of region.revealed) report.revealed.push(id);
+
+  const result = await saveTheme({ theme });
+  const applied = input.apply === true;
+  if (applied) await applyTheme({ id: theme.id });
+
+  return {
+    ok: true,
+    created,
+    copiedFrom: copiedFrom || undefined,
+    id: theme.id,
+    label: theme.label,
+    base: theme.base,
+    cssBytes: result.bytes,
+    applied,
+    report,
+    hint: applied
+      ? ""
+      : `已写入但没有切换。要让用户立刻看到效果，再调一次 ${AGENT_TOOL.write} 并传 apply: true（id 用 ${theme.id}）`,
+  };
+}
+
+/* ---------------------------------------------------------------- 工具实现 */
+
+async function toolList(args) {
+  const input = args && typeof args === "object" ? args : {};
+  const state = await readState();
+  const themes = Array.isArray(state.themes) && state.themes.length ? state.themes : presets.clone();
+  const applied = typeof state.applied === "string" ? state.applied : "";
+  const images = imageList(state);
+  const result = {
+    ok: true,
+    count: themes.length,
+    applied,
+    themes: themes.map((theme) => themeSummary(theme, applied)),
+    images: images.map((image) => ({
+      id: image.id,
+      name: image.name,
+      bytes: image.bytes,
+      usedBy: themes
+        .filter((theme) => referencedImages(theme).has(image.id))
+        .map((theme) => theme.id),
+    })),
+    regions: regionCatalog(),
+    tokens: tokenCatalog(),
+    notes: [
+      "整窗（shell）是最底层：放底图后通常要 reveal: true 把上层透出来，否则看不见。",
+      "左栏底图用顶层 sidebar 字段（宿主消费 --ds-bg-sidebar-image）；左栏整体配色改 token bg-sidebar；regions 里的 sidebar 只用于底色/模糊/圆角。",
+      "右栏（dock）只接受底色：内嵌的插件视图是原生视图，图片盖不住它。",
+      "颜色支持 #rrggbb / #rrggbbaa / transparent；transparent = 让下层透出来。",
+      "改内置预设会先复制一份再改（预设保持原样），返回值里的 copiedFrom 说明来源。",
+    ],
+  };
+  const want = String(input.defaults || "none");
+  if (want === "dark" || want === "both") result.defaultsDark = core.defaults("dark");
+  if (want === "light" || want === "both") result.defaultsLight = core.defaults("light");
+  return result;
+}
+
+async function toolImportImage(args) {
+  const input = args && typeof args === "object" ? args : {};
+  const saved = await importImageFromPath(input.path, String(input.themeId || ""));
+  return {
+    ok: true,
+    id: saved.id,
+    name: saved.name,
+    bytes: saved.bytes,
+    hint: `在 ${AGENT_TOOL.write} 里用 imageId: "${saved.id}" 复用这张图`,
+  };
+}
+
+async function toolDelete(args) {
+  const input = args && typeof args === "object" ? args : {};
+  const id = String(input.id || "").trim();
+  if (!id) throw new Error("id 是必需的");
+  const state = await readState();
+  const themes = Array.isArray(state.themes) ? state.themes : [];
+  const targetId = resolveTargetId(id, themes, state);
+  const theme = themes.find((item) => item.id === targetId);
+  const removed = await removeTheme({ id: targetId });
+  const pruned = input.pruneImages === true ? await pruneImages() : null;
+  return {
+    ok: true,
+    removed: { id: theme.id, label: theme.label },
+    remaining: removed.remaining,
+    prunedImages: pruned ? pruned.removed : 0,
+  };
+}
+
+/**
+ * 注册工具。
+ *
+ * 老宿主没有 pi.agent（或没有 registerTool）时只记一条日志 —— 面板照常可用，工具缺位
+ * 不该让插件加载失败。
+ */
+async function registerAgentTools() {
+  if (!pi.agent || typeof pi.agent.registerTool !== "function") {
+    console.warn("[theme-studio] 这个宿主没有 pi.agent.registerTool，Agent 工具未注册");
+    return;
+  }
+  const descriptors = [
+    {
+      name: AGENT_TOOL.list,
+      description:
+        "主题工坊：列出所有主题（数量、id、名字、基底、是否在用）、图片库、可设置的区域 id，以及全部可改的 token。要动主题之前先调它，别猜 id 和区域名。",
+      risk: "low",
+      schema: {
+        type: "object",
+        properties: {
+          defaults: {
+            type: "string",
+            enum: ["none", "dark", "light", "both"],
+            description: "是否连带返回宿主的默认取值（挑颜色/尺寸时有用）：none（默认）/ dark / light / both",
+          },
+        },
+      },
+      execute: guarded(toolList),
+    },
+    {
+      name: AGENT_TOOL.importImage,
+      description:
+        "主题工坊：把用户给的 PNG **绝对路径**导入图片库，得到一个 imageId。只接受 PNG（按魔数校验）且不超过 4MB。" +
+        "只在要把同一张图用在多处时才需要单独调它 —— 只用在某一处时，直接在 theme_studio_write 里给 imagePath 更省一步。",
+      risk: "medium",
+      schema: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "PNG 的绝对路径，例如 C:\\\\pics\\\\bg.png" },
+          themeId: { type: "string", description: "可选的归属主题 id，仅用于展示" },
+        },
+        required: ["path"],
+      },
+      execute: guarded(toolImportImage),
+    },
+    {
+      name: AGENT_TOOL.write,
+      description:
+        "主题工坊：新建或修改一个主题。**只改传进来的字段，其余原样保留**；不传 id 就是新建（返回值里的 id 之后用来引用）。" +
+        "一次调用可以同时设 token、给区域设底色/渐变/图片/模糊/圆角，并用 reveal 把上层透出来让底图可见。\n" +
+        "用户的说法对应关系：整窗/全局背景图 → regions[{region:\"shell\", imagePath, reveal:true}]；" +
+        "左栏背景图 → sidebar:{kind:\"image\", imagePath}；左栏整体配色（「左栏压暗」）→ tokens:{bg-sidebar}；" +
+        "某一块的背景 → regions[{region:\"main\"|\"dock\"|\"titlebar\"|\"thread\"|\"composer\", …}]；" +
+        "「要透明/透出来」→ 区域 fill:\"transparent\"，整窗 tokens:{bg-primary:\"transparent\", bg-sidebar:\"transparent\", bg-composer:\"transparent\"}；" +
+        "「图放了看不见」→ 该区域 reveal:true。\n" +
+        "改内置预设（builtin:true）会先自动复制一份再改，预设保持原样（返回值 copiedFrom 说明来源）。" +
+        "想让用户立刻看到效果要传 apply:true —— 不传就只是写入。",
+      risk: "medium",
+      schema: {
+        type: "object",
+        properties: {
+          id: {
+            type: "string",
+            description:
+              "要修改的主题 id；也接受 applied（当前应用中的）/ active（面板里正在编辑的）。不传则新建。",
+          },
+          label: { type: "string", description: "主题名；新建时用（纯中文名会得到 custom-N 这样的 id）" },
+          base: { type: "string", enum: ["dark", "light"], description: "基底配色，新建时默认 dark" },
+          apply: { type: "boolean", description: "写完后立刻把这个主题设为应用主题（应用窗口换色）" },
+          tokens: {
+            type: "object",
+            additionalProperties: { type: "string" },
+            description:
+              "要覆盖的 --ds-* token。key 可带或不带 --ds- 前缀（bg-primary / --ds-accent）；值给 null 或空串 = 恢复宿主默认。" +
+              '例：{"accent":"#7fb0ff","bg-primary":"transparent"}',
+          },
+          sidebar: {
+            type: "object",
+            description: "左栏底图（走 --ds-bg-sidebar-image，唯一开箱可见的底图位）",
+            properties: {
+              kind: { type: "string", enum: ["none", "gradient", "image"] },
+              angle: { type: "integer", minimum: 0, maximum: 360 },
+              from: { type: "string", description: "渐变起始色，如 #22305a" },
+              to: { type: "string", description: "渐变结束色" },
+              imagePath: { type: "string", description: "PNG 绝对路径（kind=image 时）" },
+              imageId: { type: "string", description: "图片库里的 id（kind=image 时）" },
+            },
+            required: ["kind"],
+          },
+          regions: {
+            type: "array",
+            description: "按区域改背景。一块区域一条，只写要改的字段。",
+            items: {
+              type: "object",
+              properties: {
+                region: {
+                  type: "string",
+                  enum: ["shell", "sidebar", "main", "dock", "titlebar", "thread", "composer"],
+                  description:
+                    "shell=整窗（最底层）/ sidebar=左栏 / main=中栏 / dock=右栏 / titlebar=标题栏 / thread=会话区 / composer=输入栏",
+                },
+                fill: {
+                  type: "string",
+                  description: "底色：#rrggbb / #rrggbbaa / transparent（透出下层）；空串 = 不设",
+                },
+                clearFill: { type: "boolean", description: "恢复这块区域的底色为默认" },
+                gradient: {
+                  type: "object",
+                  properties: {
+                    angle: { type: "integer", minimum: 0, maximum: 360 },
+                    from: { type: "string" },
+                    to: { type: "string" },
+                  },
+                  required: ["from", "to"],
+                },
+                clearGradient: { type: "boolean" },
+                imagePath: {
+                  type: "string",
+                  description: "PNG 绝对路径：导入后即作为这块区域的背景图（左栏请改用顶层 sidebar）",
+                },
+                imageId: { type: "string", description: "已在图片库里的 id" },
+                imageSize: { type: "string", enum: ["cover", "contain", "auto"] },
+                imagePosition: { type: "string", enum: ["center", "top", "bottom", "left", "right"] },
+                imageRepeat: { type: "string", enum: ["no-repeat", "repeat", "repeat-x", "repeat-y"] },
+                clearImage: { type: "boolean", description: "移除这块区域的背景图" },
+                blur: {
+                  type: "integer",
+                  minimum: 0,
+                  maximum: 40,
+                  description: "背景模糊（backdrop-filter），0 = 关闭",
+                },
+                radius: { type: "string", description: "圆角，形如 14px" },
+                reveal: {
+                  type: "boolean",
+                  description:
+                    "把盖在这块区域上面的区域底色设为透明 —— 放了底图却看不见时用；整窗还会连带放开 bg-primary / bg-sidebar / bg-composer",
+                },
+              },
+              required: ["region"],
+            },
+          },
+        },
+      },
+      execute: guarded(writeThemeFromSpec),
+    },
+    {
+      name: AGENT_TOOL.remove,
+      description:
+        "主题工坊：删除一个主题。**只在用户明确要求时使用**（这是不可撤销的）。可选 pruneImages 顺带清掉不再被任何主题引用的图片文件。",
+      risk: "high",
+      schema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "要删除的主题 id" },
+          pruneImages: { type: "boolean", description: "同时清理不再被引用的图片文件" },
+        },
+        required: ["id"],
+      },
+      execute: guarded(toolDelete),
+    },
+  ];
+
+  for (const descriptor of descriptors) {
+    await pi.agent.registerTool(descriptor);
+  }
+  console.log(`[theme-studio] 已注册 ${descriptors.length} 个 Agent 工具`);
+}
+
+async function unregisterAgentTools() {
+  if (!pi.agent || typeof pi.agent.unregisterTool !== "function") return;
+  for (const name of Object.values(AGENT_TOOL)) {
+    try {
+      await pi.agent.unregisterTool(name);
+    } catch {
+      /* 已经不在注册表里也无所谓 */
+    }
+  }
+}
+
 /* ------------------------------------------------------------ 生命周期 */
 
 async function onLoad() {
   // 主题模型是 ESM，先装上：后面每一个 handler 都依赖它。
   await loadThemeModel();
+  // Agent 工具注册失败（例如宿主还没授权 agent.tool.register）不该让整个插件加载失败：
+  // 面板与主题注册照常，只是少一组工具。
+  try {
+    await registerAgentTools();
+  } catch (error) {
+    console.warn(`[theme-studio] Agent 工具注册失败：${error.message}`);
+  }
   await pi.commands.register({
     id: COMMAND_ID,
     title: "主题工坊：打开",
@@ -898,6 +1583,7 @@ async function onLoad() {
 
 async function onUnload() {
   // 运行时主题由宿主在插件卸载时一并清理；这里只需摘掉命令。
+  await unregisterAgentTools();
   await pi.commands.unregister(COMMAND_ID);
 }
 

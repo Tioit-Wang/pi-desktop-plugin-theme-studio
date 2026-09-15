@@ -78,4 +78,6 @@ studio.theme.save → pi.themes.upsert（运行时注册，不写插件包）
 - **新增区域**：只改 `lib/theme-core.mjs` 的 `REGIONS` —— 预览打标签、面板列表、面包屑都跟着走。
 - **新增面板通道**：`main.js` 的 `PANEL_HANDLERS` + `src/lib/bridge.ts` 的 `Channels` 两处同改，
   调用点由类型兜住。
+- **改 Agent 工具**：`main.js` 的 descriptors 与 `manifest.json` 的 `contributes.agentTools[]`
+  两处同改；设计说明见 [agent-tools.md](agent-tools.md)。
 - **不要**在预览里写 Tailwind 类，也不要让工坊界面的样式泄漏到 `.pv-root` 子树里。

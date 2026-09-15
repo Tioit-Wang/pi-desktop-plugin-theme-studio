@@ -76,6 +76,14 @@ const IMG_DIR_NAME = "images";
 /** 图片 id 的合法形状：时间戳命名（也兼容旧的 16 位内容哈希）。 */
 const IMAGE_ID_RE = /^[0-9A-Za-z][0-9A-Za-z_-]{7,63}$/;
 
+/**
+ * 预设随包带来的图片（相对插件根）：assets/presets/<图片 id>.png。
+ *
+ * 主题 CSS 只认绝对路径（ADR 0255），所以预设引用的贴图必须在加载时落进数据目录 ——
+ * 包内文件不会出现在任何 url() 里。
+ */
+const PRESET_IMAGE_DIR = "assets/presets";
+
 /** 未知面板 channel 会转发到这里；白名单之外一律报错。 */
  const PANEL_HANDLERS = {
    "studio.library": () => readLibrary(),
@@ -1948,6 +1956,128 @@ async function unregisterAgentTools() {
   }
 }
 
+/* ------------------------------------------------- 内置预设的并库与随包资源 */
+
+/** 与键顺序无关的 JSON 文本：判断两份设计是不是同一份时用。 */
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value === undefined ? null : value);
+  }
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(value)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+    .join(",")}}`;
+}
+
+/** 两份设计是否一致 —— 只比设计，不比 id / label / builtin 这些元数据。 */
+function sameDesign(a, b) {
+  if (!a || !b) return false;
+  if ((a.base || "dark") !== (b.base || "dark")) return false;
+  return (
+    stableStringify(a.tokens || null) === stableStringify(b.tokens || null) &&
+    stableStringify(a.regions || null) === stableStringify(b.regions || null) &&
+    stableStringify(a.sidebarImage || null) === stableStringify(b.sidebarImage || null)
+  );
+}
+
+/**
+ * 把新版本里新增的内置预设并进用户已有的主题库。
+ *
+ * 预设只在「库为空」时整份种下去（首次运行），之后库完全属于用户 —— 所以后来新增
+ * 的预设必须主动并进来。三条规则：
+ *
+ *   1. 库里没有这个 id             → 加进去，并记进 state.presetIds。
+ *   2. 库里已有同 id、设计完全一样 → 认领成预设（builtin:true）：不重复添加、不动设计。
+ *      用户完全可能先自己做出这套配色（Agent 工具按 label 生成 slug 当 id，很容易撞），
+ *      我们后来才把它收进预设 —— 内容一模一样，那就是同一套。
+ *   3. 记过账、但库里没有         → 用户删过它，不复活。
+ */
+function mergePresetThemes(state, themes) {
+  const seeded = new Set(Array.isArray(state.presetIds) ? state.presetIds : []);
+  const list = themes.slice();
+  const byId = new Map(list.map((theme) => [theme && theme.id, theme]));
+  let added = 0;
+  let adopted = 0;
+
+  for (const presetTheme of presets.PRESETS) {
+    const id = presetTheme.id;
+    const existing = byId.get(id);
+    if (existing) {
+      if (existing.builtin !== true && sameDesign(existing, presetTheme)) {
+        list[list.indexOf(existing)] = { ...existing, builtin: true };
+        adopted += 1;
+      }
+      seeded.add(id);
+      continue;
+    }
+    if (seeded.has(id)) continue;
+    const copy = JSON.parse(JSON.stringify(presetTheme));
+    list.push(copy);
+    byId.set(id, copy);
+    seeded.add(id);
+    added += 1;
+  }
+
+  return {
+    themes: list,
+    presetIds: Array.from(seeded),
+    added,
+    adopted,
+    changed: added > 0 || adopted > 0 || !Array.isArray(state.presetIds),
+  };
+}
+
+/**
+ * 把预设引用的随包贴图落进数据目录并登记。
+ *
+ * 主题 CSS 是绝对路径（ADR 0255），指向数据目录里的文件；预设的图不在那里，所以要
+ * 复制过去 —— 否则宿主拿到的是指向空文件的 url()，整个主题会被跳过。
+ *
+ * 只补「预设还引用它、但登记或文件缺了」的那些：用户删掉一张图时引用会被一起清掉
+ * （removeImage → withImageDetached），所以这里不会把它硬塞回来。
+ */
+async function seedPresetImages(state, themes) {
+  const images = { ...(state.images || {}) };
+  const presetIds = new Set(presets.PRESETS.map((item) => item.id));
+  const wanted = new Map();
+  for (const theme of themes) {
+    if (!theme || theme.builtin !== true || !presetIds.has(theme.id)) continue;
+    for (const id of referencedImages(theme)) if (!wanted.has(id)) wanted.set(id, theme.id);
+  }
+
+  let added = 0;
+  let missing = 0;
+  for (const [id, owner] of wanted) {
+    if (imageUsable(id, images)) continue;
+    const source = path.join(__dirname, PRESET_IMAGE_DIR, `${id}.png`);
+    if (!fs.existsSync(source)) {
+      missing += 1;
+      continue;
+    }
+    try {
+      await ensureImagesDir();
+      const target = imageTarget(id);
+      fs.copyFileSync(source, target);
+      images[id] = {
+        path: target,
+        bytes: fs.statSync(target).size,
+        name: `${id}.png`,
+        addedAt: Date.now(),
+        owner,
+      };
+      added += 1;
+    } catch (error) {
+      missing += 1;
+      console.warn(`[theme-studio] 预设贴图 ${id} 落盘失败：${error.message}`);
+    }
+  }
+  if (missing) {
+    console.warn(`[theme-studio] ${missing} 张预设贴图在包里找不到（${PRESET_IMAGE_DIR}/）`);
+  }
+  return { images, added, changed: added > 0 };
+}
+
 /* ------------------------------------------------------------ 生命周期 */
 
 async function onLoad() {
@@ -1998,8 +2128,33 @@ async function onLoad() {
      await persist(state);
      console.log(`[theme-studio] 已清理 ${migration.dropped} 条没有绝对路径的旧图片记录`);
    }
-   const themes = Array.isArray(state.themes) && state.themes.length ? state.themes : presets.clone();
-   const images = state.images || {};
+    // 内置预设：首次运行整份种下去，之后库完全属于用户；新版本里新增的预设在这里
+    // 并进来（mergePresetThemes），预设自带的贴图在这里落进数据目录（seedPresetImages）。
+    const fresh = !(Array.isArray(state.themes) && state.themes.length);
+    const merged = fresh
+      ? {
+          themes: presets.clone(),
+          presetIds: presets.PRESETS.map((item) => item.id),
+          added: 0,
+          adopted: 0,
+          changed: false,
+        }
+      : mergePresetThemes(state, state.themes);
+    const seededImages = await seedPresetImages(state, merged.themes);
+    if (fresh || merged.changed || seededImages.changed) {
+      state = {
+        ...state,
+        themes: merged.themes,
+        images: seededImages.images,
+        presetIds: merged.presetIds,
+      };
+      await persist(state);
+      if (merged.added) console.log(`[theme-studio] 并进 ${merged.added} 套新增的内置预设`);
+      if (merged.adopted) console.log(`[theme-studio] 认领 ${merged.adopted} 套同设计的用户主题为预设`);
+      if (seededImages.added) console.log(`[theme-studio] 预设贴图已落盘 ${seededImages.added} 张`);
+    }
+    const themes = merged.themes;
+    const images = seededImages.images;
 
    // 全部走运行时注册：宿主会解析 CSS 里的绝对路径（ADR 0255），所以这里不写任何
    // 插件包内文件 —— 也就不会触发开发监听器重载。
@@ -2014,7 +2169,6 @@ async function onLoad() {
        console.warn(`[theme-studio] 跳过无法注册的主题 ${theme && theme.id}: ${error.message}`);
      }
    }
-   if (!state.themes) await persist({ ...state, themes });
    console.log(
      `[theme-studio] 运行时注册 ${viaRuntime} 个主题` +
        (failed ? `，跳过 ${failed} 个` : ""),

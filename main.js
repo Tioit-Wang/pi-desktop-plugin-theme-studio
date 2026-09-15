@@ -789,7 +789,10 @@ async function readImageBytes(payload) {
 /** 导出清单里的生成器版本：直接读 manifest，免得两处版本漂移。 */
 function pluginVersion() {
   try {
-    return String(require(path.join(__dirname, "manifest.json")).version || "unknown");
+    // 用 fs 读而不是 Node 的模块加载：平台的审计规则 SEC003 把「非字面量的模块加载」
+    // 判成动态模块加载（BLOCKER）；读一个 JSON 没必要踩它。
+    const raw = fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8");
+    return String(JSON.parse(raw).version || "unknown");
   } catch {
     return "unknown";
   }

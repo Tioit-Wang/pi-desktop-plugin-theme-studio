@@ -36,6 +36,13 @@
       <div class="body">
         <!-- ========================= 左：主题库（可折叠） ========================= -->
         <aside class="library" id="library">
+          <!-- 左栏自己的头部：标题、数量、收起。位置固定，列表在其下滚动 -->
+          <div class="lib-head">
+            <span class="lib-title">主题库</span>
+            <span class="lib-count" id="libCount">—</span>
+            <span class="spacer"></span>
+            <button class="iconbtn" id="btnLibraryInside" type="button" title="收起主题库">◧</button>
+          </div>
           <div class="lib-search">
             <input type="text" id="libSearch" placeholder="搜索主题…" spellcheck="false" />
           </div>

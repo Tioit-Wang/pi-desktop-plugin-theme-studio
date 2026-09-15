@@ -605,6 +605,7 @@
 
   function renderLibrary() {
     var host = el("libList");
+    var totalThemes = state.themes.length + BUILTIN_CHOICES.length;
     host.replaceChildren();
 
     var filter = state.filter.trim().toLowerCase();
@@ -642,6 +643,10 @@
       empty.textContent = "没有匹配的主题";
       host.append(empty);
     }
+
+    // 左栏头部的数量：显示的是「筛完之后还剩多少」
+    var count = el("libCount");
+    if (count) count.textContent = filter ? shown + " / " + totalThemes : String(totalThemes);
   }
 
   function libraryRow(theme) {
@@ -2302,6 +2307,18 @@ function previewThumb(design) {
     el("libraryOrb").addEventListener("click", function () {
       setLibraryOpen(true);
     });
+    el("btnLibraryInside").addEventListener("click", function () {
+      setLibraryOpen(false);
+    });
+    // 窄窗（画布放不下 1280 预览 + 两个侧栏）时，左栏改成覆盖式抽屉，
+    // 这样预览宽度不被挤掉；展开时半透明遮住画布一部分是刻意的。
+    var narrow = window.matchMedia("(max-width: 1080px)");
+    var applyNarrow = function () {
+      el("library").classList.toggle("drawer", narrow.matches);
+    };
+    applyNarrow();
+    if (narrow.addEventListener) narrow.addEventListener("change", applyNarrow);
+    else if (narrow.addListener) narrow.addListener(applyNarrow);
     el("btnSide").addEventListener("click", function () {
       if (state.pane) closePane();
       else openPane(lastPane || "region");

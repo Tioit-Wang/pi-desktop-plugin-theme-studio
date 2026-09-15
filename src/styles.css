@@ -1,0 +1,192 @@
+@import "tailwindcss";
+
+@source "../index.html";
+@source "../src";
+
+/*
+ * 主题工坊的界面调色板。
+ *
+ * --ui-* 是工坊自己的界面（跟随应用当前主题：appearance 把解析出的基调写到
+ * <html data-theme>），永远与「被编辑的主题」隔离 —— 后者只作用在预览子树上，
+ * 用宿主自己的 --ds-* 名字。两条线互不污染，工坊在任何主题下都可读。
+ */
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) {
+  --ui-bg: #181818;
+  --ui-panel: #000000;
+  --ui-tile: rgba(255, 255, 255, 0.035);
+  --ui-tile-hover: rgba(255, 255, 255, 0.06);
+  --ui-tile-deep: rgba(255, 255, 255, 0.08);
+  --ui-raised: #282828;
+  --ui-text: #ffffff;
+  --ui-text-2: rgba(255, 255, 255, 0.7);
+  --ui-muted: rgba(255, 255, 255, 0.52);
+  --ui-faint: rgba(255, 255, 255, 0.38);
+  --ui-border: rgba(255, 255, 255, 0.08);
+  --ui-border-strong: rgba(255, 255, 255, 0.14);
+  --ui-accent: #ffffff;
+  --ui-accent-ink: #181818;
+  --ui-success: #40c977;
+  --ui-warning: #ff8549;
+  --ui-error: #ff6764;
+  --ui-canvas: #0d0d0d;
+  --ui-dot: rgba(255, 255, 255, 0.07);
+  --ui-shadow-panel: -18px 0 44px rgba(0, 0, 0, 0.45), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --ui-shadow-orb: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="light"] {
+  --ui-bg: #ffffff;
+  --ui-panel: #f9f9f9;
+  --ui-tile: rgba(26, 28, 31, 0.035);
+  --ui-tile-hover: rgba(26, 28, 31, 0.06);
+  --ui-tile-deep: rgba(26, 28, 31, 0.09);
+  --ui-raised: #ffffff;
+  --ui-text: #1a1c1f;
+  --ui-text-2: rgba(26, 28, 31, 0.74);
+  --ui-muted: #5d5d5d;
+  --ui-faint: #8f9296;
+  --ui-border: rgba(26, 28, 31, 0.09);
+  --ui-border-strong: rgba(26, 28, 31, 0.16);
+  --ui-accent: #1a1c1f;
+  --ui-accent-ink: #ffffff;
+  --ui-success: #00a240;
+  --ui-warning: #e25507;
+  --ui-error: #e02e2a;
+  --ui-canvas: #ededed;
+  --ui-dot: rgba(26, 28, 31, 0.07);
+  --ui-shadow-panel: -18px 0 44px rgba(0, 0, 0, 0.18), 0 8px 24px rgba(0, 0, 0, 0.12);
+  --ui-shadow-orb: 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+
+/*
+ * shadcn/ui 的语义 token 映射到工坊调色板：组件里写 bg-background /
+ * text-muted-foreground / border-border 就是工坊自己的颜色，深浅两个基调自动跟。
+ * inline 关键字让这些 token 直接引用 --ui-* 的当前值（而不是在 :root 上求值一次）。
+ */
+@theme inline {
+  /* 工坊自己的词汇（--ui-* 的直接映射，代码里读起来就是设计稿上的名字）。 */
+  --color-background: var(--ui-bg);
+  --color-canvas: var(--ui-canvas);
+  --color-panel: var(--ui-panel);
+  --color-raised: var(--ui-raised);
+  --color-tile: var(--ui-tile);
+  --color-tile-hover: var(--ui-tile-hover);
+  --color-tile-deep: var(--ui-tile-deep);
+  --color-ink: var(--ui-text);
+  --color-ink-2: var(--ui-text-2);
+  --color-muted: var(--ui-muted);
+  --color-faint: var(--ui-faint);
+  --color-line: var(--ui-border);
+  --color-line-strong: var(--ui-border-strong);
+  --color-accent: var(--ui-accent);
+  --color-accent-ink: var(--ui-accent-ink);
+  --color-success: var(--ui-success);
+  --color-warning: var(--ui-warning);
+  --color-danger: var(--ui-error);
+
+  /* shadcn/ui 的约定名，指向同一批颜色 —— 这样抄来的组件源码不用改类名。 */
+  --color-foreground: var(--ui-text);
+  --color-card: var(--ui-panel);
+  --color-card-foreground: var(--ui-text);
+  --color-popover: var(--ui-raised);
+  --color-popover-foreground: var(--ui-text);
+  --color-primary: var(--ui-accent);
+  --color-primary-foreground: var(--ui-accent-ink);
+  --color-secondary: var(--ui-tile);
+  --color-secondary-foreground: var(--ui-text-2);
+  --color-muted-foreground: var(--ui-muted);
+  --color-border: var(--ui-border);
+  --color-input: var(--ui-border);
+  --color-ring: var(--ui-accent);
+  --color-destructive: var(--ui-error);
+
+  /* 工坊界面的字号档。面板是紧凑桌面 UI：11-13px 是常态，
+     所以不套用 Tailwind 默认的 12/14/16 阶梯，另起一套 ui-* 名字。 */
+  --text-ui-2xs: 10.5px;
+  --text-ui-2xs--line-height: 1.45;
+  --text-ui-xs: 11px;
+  --text-ui-xs--line-height: 1.45;
+  --text-ui-sm: 11.5px;
+  --text-ui-sm--line-height: 1.5;
+  --text-ui-md: 12.5px;
+  --text-ui-md--line-height: 1.5;
+  --text-ui-lg: 13.5px;
+  --text-ui-lg--line-height: 1.45;
+
+  /* 与宿主同一套圆角阶梯（apps/desktop/src/styles/tokens.css）。 */
+  --radius-3xs: 4px;
+  --radius-2xs: 6px;
+  --radius-xs: 8px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-md-plus: 14px;
+  --radius-lg: 16px;
+  --radius-lg-plus: 18px;
+  --radius-xl: 20px;
+  --radius-2xl: 24px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+
+  body {
+    overflow: hidden;
+    background: var(--ui-bg);
+    color: var(--ui-text);
+    font: 12.5px/1.5 var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: default;
+  }
+
+  /* 面板窄，滚动条要细。 */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--ui-border-strong);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ui-faint);
+  }
+
+  :focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--ui-accent) 70%, transparent);
+    outline-offset: 1px;
+  }
+}

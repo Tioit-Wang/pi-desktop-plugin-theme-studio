@@ -1,6 +1,6 @@
 {
   "name": "pi-desktop-plugin-theme-studio",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "private": true,
   "description": "PI-Desktop 主题工坊插件。渲染层是 React + Tailwind + shadcn/ui 风格组件，由 Vite 打成单文件 IIFE 交给面板以 file:// 加载；插件进程（main.js）与 lib/ 里的主题模型不经过打包。",
   "scripts": {

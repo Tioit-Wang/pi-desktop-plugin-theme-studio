@@ -1,6 +1,6 @@
 # 主题工坊 Theme Studio（`pi.theme.studio`）
 
-把 PI-Desktop 的外观调成你自己的样子：内置 6 套配色起手（Aurora / Ember / Nocturne / Paper / Sand / QQ 2008），改完一键应用 —— 应用窗口立刻换色，不需要重启。
+把 PI-Desktop 的外观调成你自己的样子：内置 8 套配色起手（Aurora / Ember / Nocturne / Paper / Sand / QQ 2008 / 奶龙 / QQ 2009），改完一键应用 —— 应用窗口立刻换色，不需要重启。
 
 - **7 个可独立设置的区域**：整窗、左栏、中栏、右栏、标题栏、会话区、输入栏 —— 各自可设底色、渐变、图片、背景模糊与圆角。
 - **预览就是真窗口**：预览按真窗口的 1280×800 渲染，类名与度量逐条对齐宿主样式表，所以「预览里长这样」等于「应用里长这样」。
@@ -16,7 +16,7 @@ pi.theme.studio
 ├─ main.js                  插件进程（CJS）：onLoad / onUnload / onPanelInvoke
 ├─ lib/
 │  ├─ theme-core.mjs        56 个 token 表、7 个区域、序列化、对比度与颜色计算
-│  └─ presets.mjs           6 套内置配色（QQ 2008 带一张随包的 8×8 贴图）
+│  └─ presets.mjs           8 套内置配色（QQ 2008 带一张随包的 8×8 贴图，奶龙带三张，QQ 2009 带两张）
 ├─ assets/presets/           预设随包的贴图（加载时复制进数据目录，CSS 用绝对路径）
 ├─ src/                     渲染层源码：React + Tailwind + shadcn/ui 风格组件
 │  ├─ main.tsx              挂载

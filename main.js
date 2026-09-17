@@ -1608,7 +1608,7 @@ async function writeThemeFromSpec(args) {
       // 把改动落在副本上，并在返回值里说清来源（用户想的就是「改这套预设」）。
       created = true;
       copiedFrom = source.id;
-      // label 用「Aurora 副本」，于是 id 派生成 aurora-2 —— 一眼看得出它从哪来。
+      // label 用「Contrast 副本」，于是 id 派生成 contrast-2 —— 一眼看得出它从哪来。
       const label = String(input.label || "").trim().slice(0, 64) || `${source.label} 副本`;
       theme = {
         ...JSON.parse(JSON.stringify(source)),

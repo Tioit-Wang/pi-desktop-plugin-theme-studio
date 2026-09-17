@@ -103,7 +103,7 @@ function ReplicaChat() {
                         <span className="tool-activity-header">
                           <span className="tool-activity-icon">▤</span>
                           <span className="tool-activity-label">ThemeStudio</span>
-                          <span className="tool-activity-count">themes/aurora.css · +12 −8</span>
+                          <span className="tool-activity-count">themes/contrast.css · +12 −8</span>
                         </span>
                       </div>
                       <div className="tool-activity-group">

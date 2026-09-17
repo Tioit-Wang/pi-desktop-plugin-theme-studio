@@ -29,7 +29,7 @@ Agent 不用记两套语义。
 | 传 `id`（字面量） | 改那个主题 |
 | 传 `id: "applied"` / `"active"` | 解析成「当前应用中的」/「面板里在编辑的」——仅当库里没有恰好叫这个名字的 id |
 | 传 `id` 但库里没有 | 报错并列出可用的 id。**不静默新建**，否则用户以为在改、其实多出来一个 |
-| `id` 命中 `builtin: true` 预设 | 先复制一份（`<label> 副本`，id 形如 `aurora-2`）再改，预设保持原样；返回值 `copiedFrom` 说明来源 |
+| `id` 命中 `builtin: true` 预设 | 先复制一份（`<label> 副本`，id 形如 `contrast-2`）再改，预设保持原样；返回值 `copiedFrom` 说明来源 |
 
 返回值里的 `report` 逐项列出做了什么（`tokensSet` / `tokensCleared` / `regions[].changes` /
 `revealed` / `images` / `sidebar`），让 Agent 能准确复述，而不用回头再 list 一遍。

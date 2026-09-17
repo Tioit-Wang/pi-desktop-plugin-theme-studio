@@ -7,11 +7,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Theme } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { BUILTIN_CHOICES, previewColors } from "@/store/studio-store";
+import { previewColors } from "@/store/studio-store";
 
-type Row =
-  | { kind: "theme"; id: string; label: string; theme: Theme }
-  | { kind: "host"; id: string; label: string; hostId: string };
+type Row = { id: string; label: string; theme: Theme };
 
 function LibraryRow({
   row,
@@ -30,7 +28,7 @@ function LibraryRow({
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
-  const colors = row.kind === "theme" ? previewColors(row.theme, defaults) : [];
+  const colors = previewColors(row.theme, defaults);
 
   return (
     <div
@@ -43,11 +41,9 @@ function LibraryRow({
         className="flex size-5.5 shrink-0 overflow-hidden rounded-2xs shadow-[0_0_0_1px_var(--ui-border-strong)]"
         aria-hidden="true"
       >
-        {(row.kind === "theme" ? colors : ["transparent", "transparent", "transparent", "transparent"]).map(
-          (color, index) => (
-            <i key={index} className="flex-1" style={{ background: color }} />
-          ),
-        )}
+        {colors.map((color, index) => (
+          <i key={index} className="flex-1" style={{ background: color }} />
+        ))}
       </span>
 
       <button
@@ -56,15 +52,13 @@ function LibraryRow({
           "min-w-0 flex-1 truncate text-left text-ui-md",
           active ? "font-semibold text-ink" : "text-ink-2 hover:underline",
         )}
-        title={row.kind === "host" ? row.hostId : row.id}
+        title={row.id}
         onClick={onSelect}
       >
         {row.label}
       </button>
 
-      <Badge variant={active ? "strong" : "outline"}>
-        {row.kind === "host" ? "宿主" : row.theme.base === "light" ? "L" : "D"}
-      </Badge>
+      <Badge variant={active ? "strong" : "outline"}>{row.theme.base === "light" ? "L" : "D"}</Badge>
 
       {applied ? (
         <span
@@ -74,22 +68,20 @@ function LibraryRow({
         />
       ) : null}
 
-      {row.kind === "theme" ? (
-        <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-          <Button variant="ghost" size="icon-sm" title="复制" onClick={onDuplicate}>
-            <Copy className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            title="删除"
-            className="hover:text-danger"
-            onClick={onDelete}
-          >
-            <X className="size-3" />
-          </Button>
-        </span>
-      ) : null}
+      <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+        <Button variant="ghost" size="icon-sm" title="复制" onClick={onDuplicate}>
+          <Copy className="size-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="删除"
+          className="hover:text-danger"
+          onClick={onDelete}
+        >
+          <X className="size-3" />
+        </Button>
+      </span>
     </div>
   );
 }
@@ -103,7 +95,6 @@ export function LibraryColumn({
   defaults,
   onFilter,
   onSelect,
-  onApplyHost,
   onDuplicate,
   onDelete,
   onNew,
@@ -117,7 +108,6 @@ export function LibraryColumn({
   defaults: { dark: Record<string, string>; light: Record<string, string> };
   onFilter: (value: string) => void;
   onSelect: (id: string) => void;
-  onApplyHost: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
   onNew: () => void;
@@ -133,28 +123,19 @@ export function LibraryColumn({
       rows: themes
         .filter((theme) => !theme.builtin)
         .filter((theme) => match(theme.id, theme.label))
-        .map((theme) => ({ kind: "theme" as const, id: theme.id, label: theme.label, theme })),
+        .map((theme) => ({ id: theme.id, label: theme.label, theme })),
     },
     {
       label: "内置预设",
       rows: themes
         .filter((theme) => theme.builtin)
         .filter((theme) => match(theme.id, theme.label))
-        .map((theme) => ({ kind: "theme" as const, id: theme.id, label: theme.label, theme })),
-    },
-    {
-      label: "宿主主题",
-      rows: BUILTIN_CHOICES.filter((choice) => match(choice.id, choice.label)).map((choice) => ({
-        kind: "host" as const,
-        id: `builtin:${choice.id}`,
-        label: choice.label,
-        hostId: choice.id,
-      })),
+        .map((theme) => ({ id: theme.id, label: theme.label, theme })),
     },
   ];
 
   const shown = groups.reduce((total, group) => total + group.rows.length, 0);
-  const total = themes.length + BUILTIN_CHOICES.length;
+  const total = themes.length;
 
   return (
     <aside
@@ -200,14 +181,12 @@ export function LibraryColumn({
                 <LibraryRow
                   key={row.id}
                   row={row}
-                  active={row.kind === "theme" && row.id === active}
-                  applied={row.kind !== "theme" ? applied === row.hostId : applied === row.id}
+                  active={row.id === active}
+                  applied={applied === row.id}
                   defaults={defaults}
-                  onSelect={() =>
-                    row.kind === "host" ? onApplyHost(row.hostId) : onSelect(row.id)
-                  }
-                  onDuplicate={() => row.kind === "theme" && onDuplicate(row.id)}
-                  onDelete={() => row.kind === "theme" && onDelete(row.id)}
+                  onSelect={() => onSelect(row.id)}
+                  onDuplicate={() => onDuplicate(row.id)}
+                  onDelete={() => onDelete(row.id)}
                 />
               ))}
             </div>

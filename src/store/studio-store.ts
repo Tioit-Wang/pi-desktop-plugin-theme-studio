@@ -29,13 +29,6 @@ import type {
 /** 改动落盘前的防抖窗口：一次连续拖动只注册一次。 */
 export const SAVE_DEBOUNCE_MS = 600;
 
-/** 宿主自己提供的三个选项（不是本插件的主题）。 */
-export const BUILTIN_CHOICES = [
-  { id: "system", label: "跟随系统" },
-  { id: "dark", label: "内置 Dark" },
-  { id: "light", label: "内置 Light" },
-] as const;
-
 export const PANE_TITLES: Record<PaneId, string> = {
   region: "区域",
   token: "Token",
@@ -121,7 +114,6 @@ type StudioState = {
   closePane: () => void;
 
   selectTheme: (id: string) => void;
-  applyBuiltin: (id: string) => Promise<void>;
   applyCurrent: () => Promise<void>;
   newTheme: () => void;
   duplicateTheme: (id: string) => void;
@@ -399,20 +391,6 @@ export const useStudio = create<StudioState>((set, get) => {
         /* 只是记住上次编辑的对象，失败无所谓 */
       });
       get().setStatus(`正在编辑「${theme?.label ?? id}」· 改动会自动注册`);
-    },
-
-    async applyBuiltin(id) {
-      try {
-        await invoke("studio.apply", { id });
-        set({ applied: id });
-        get().setStatus(`已切换为宿主主题：${id}`);
-        get().pushToast(
-          { key: "studio.apply", kind: "success", title: `已切换为宿主主题：${id}` },
-          { ttl: 3200 },
-        );
-      } catch (error) {
-        get().setStatus(`切换失败：${detail(error)}`, true);
-      }
     },
 
     async applyCurrent() {

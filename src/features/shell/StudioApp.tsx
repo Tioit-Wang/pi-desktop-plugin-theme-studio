@@ -146,7 +146,6 @@ export function StudioApp() {
             defaults={s.defaults}
             onFilter={s.setFilter}
             onSelect={s.selectTheme}
-            onApplyHost={(id) => void s.applyBuiltin(id)}
             onDuplicate={s.duplicateTheme}
             onDelete={s.deleteTheme}
             onNew={s.newTheme}

@@ -1,4 +1,4 @@
-import { Contrast, Image as ImageIcon, LayoutGrid, Palette, SlidersHorizontal, X } from "lucide-react";
+import { Contrast, Copy, Image as ImageIcon, LayoutGrid, Lock, Palette, SlidersHorizontal, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -94,11 +94,19 @@ export function FloatingPanel({
   title,
   open,
   onClose,
+  readOnly,
+  onDuplicate,
   children,
 }: {
   title: string;
   open: boolean;
   onClose: () => void;
+  /**
+   * 内置预设只读：正文盖一层蒙版，把「为什么改不了 / 去哪改」说清楚。
+   * 头部仍可点（收起、切页），预览也照常点选区域 —— 只是选完看到的是蒙版。
+   */
+  readOnly?: boolean;
+  onDuplicate?: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -121,7 +129,21 @@ export function FloatingPanel({
           <TooltipContent>收起（Esc）</TooltipContent>
         </Tooltip>
       </header>
-      <ScrollArea className="flex-1">{children}</ScrollArea>
+      <div className="relative min-h-0 flex-1">
+        <ScrollArea className="h-full">{children}</ScrollArea>
+        {readOnly ? (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-panel/92 px-7 text-center backdrop-blur-sm">
+            <Lock className="size-5 text-faint" />
+            <p className="text-ui-md font-semibold">内置主题不可修改</p>
+            <p className="text-ui-xs text-faint">改动需在左侧复制主题后再进行</p>
+            {onDuplicate ? (
+              <Button size="sm" className="mt-1.5" onClick={onDuplicate}>
+                <Copy className="size-3" /> 复制这个主题
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }

@@ -238,7 +238,23 @@ let booted = false;
 
 const EMPTY_DEFAULTS = { dark: {}, light: {} };
 
+/**
+ * 内置预设是大家挑颜色时的参照物，只读：改它等于改参照物，所以一律挡住，
+ * 并把「怎么继续」说出来 —— 复制一份再改。
+ *
+ * 界面那层另有一道蒙版（FloatingPanel），这里是兜底：键盘快捷键与面板里
+ * 残留的控件都还能绕到 mutate / rename。
+ */
+function readonlyNotice(get: () => StudioState, theme: Theme, verb: string): void {
+  get().setStatus(
+    `「${theme.label}」是内置预设，${verb} —— 请先在左侧主题库右键「复制」一份`,
+    false,
+    { toast: true },
+  );
+}
+
 export const useStudio = create<StudioState>((set, get) => {
+
   /** 所有改动的唯一出口：改设计 → 重绘（React 自动）→ 防抖注册。 */
   function scheduleSave(): void {
     if (saveTimer) window.clearTimeout(saveTimer);
@@ -390,7 +406,11 @@ export const useStudio = create<StudioState>((set, get) => {
       void invoke("studio.state.put", { state: { active: id } }).catch(() => {
         /* 只是记住上次编辑的对象，失败无所谓 */
       });
-      get().setStatus(`正在编辑「${theme?.label ?? id}」· 改动会自动注册`);
+      get().setStatus(
+        theme?.builtin
+          ? `正在预览内置预设「${theme.label ?? id}」· 只读，改动请先在左侧复制一份`
+          : `正在编辑「${theme?.label ?? id}」· 改动会自动注册`,
+      );
     },
 
     async applyCurrent() {
@@ -483,6 +503,10 @@ export const useStudio = create<StudioState>((set, get) => {
     rename(label) {
       const theme = activeTheme(get());
       if (!theme) return;
+      if (theme.builtin) {
+        readonlyNotice(get, theme, "不能改名");
+        return;
+      }
       const trimmed = label.trim().slice(0, 64);
       if (!trimmed || trimmed === theme.label) return;
       get().mutate((draft) => {
@@ -493,6 +517,11 @@ export const useStudio = create<StudioState>((set, get) => {
 
     mutate(mutator) {
       const { themes, active } = get();
+      const current = themes.find((item) => item.id === active);
+      if (current?.builtin) {
+        readonlyNotice(get, current, "不能修改");
+        return;
+      }
       const next = themes.map((theme) => {
         if (theme.id !== active) return theme;
         const draft: Theme = JSON.parse(JSON.stringify(theme));

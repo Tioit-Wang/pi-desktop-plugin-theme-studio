@@ -114,6 +114,7 @@ export function StudioApp() {
         <Topbar
           themeLabel={theme?.label ?? "—"}
           base={base}
+          builtin={theme?.builtin === true}
           overridden={overriddenCount(theme)}
           strip={strip}
           worst={worst}
@@ -148,6 +149,17 @@ export function StudioApp() {
             onSelect={s.selectTheme}
             onDuplicate={s.duplicateTheme}
             onDelete={s.deleteTheme}
+            onApply={(id) => {
+              // 菜单里应用的可能不是当前选中项：先选中再应用。
+              s.selectTheme(id);
+              void s.applyCurrent();
+            }}
+            onRename={(id) => {
+              s.selectTheme(id);
+              const input = document.querySelector<HTMLInputElement>("[data-theme-name]");
+              input?.focus();
+              input?.select();
+            }}
             onNew={s.newTheme}
             onCollapse={() => s.setLibraryOpen(false)}
           />
@@ -181,6 +193,9 @@ export function StudioApp() {
               title={s.pane ? PANE_TITLES[s.pane] : PANE_TITLES[s.lastPane]}
               open={Boolean(s.pane)}
               onClose={() => s.closePane()}
+              // 内置预设只读：检查面板不改任何东西，留着能看；其余三块盖蒙版。
+              readOnly={Boolean(theme?.builtin) && s.pane !== "audit"}
+              onDuplicate={() => s.active && s.duplicateTheme(s.active)}
             >
               {s.pane === "region" && theme ? (
                 <RegionPanel

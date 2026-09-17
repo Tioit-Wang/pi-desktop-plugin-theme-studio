@@ -1,7 +1,16 @@
-import { Copy, PanelLeftClose, Plus, X } from "lucide-react";
+import { Copy, PanelLeftClose, Pencil, Plus, Send, Trash2 } from "lucide-react";
+import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -11,22 +20,26 @@ import { previewColors } from "@/store/studio-store";
 
 type Row = { id: string; label: string; theme: Theme };
 
+/**
+ * 右键菜单位置：Radix 的 DropdownMenu 只会锚在 trigger 上，而右键没有 trigger，
+ * 所以放一颗 0×0 的隐形锚点在点击坐标上（position:fixed，不占布局）。
+ */
+type MenuState = { id: string; x: number; y: number } | null;
+
 function LibraryRow({
   row,
   active,
   applied,
   defaults,
   onSelect,
-  onDuplicate,
-  onDelete,
+  onContextMenu,
 }: {
   row: Row;
   active: boolean;
   applied: boolean;
   defaults: { dark: Record<string, string>; light: Record<string, string> };
   onSelect: () => void;
-  onDuplicate: () => void;
-  onDelete: () => void;
+  onContextMenu: (event: React.MouseEvent) => void;
 }) {
   const colors = previewColors(row.theme, defaults);
 
@@ -36,6 +49,7 @@ function LibraryRow({
         "group flex h-9 w-full items-center gap-2.5 px-3",
         active ? "bg-tile-deep" : "hover:bg-tile",
       )}
+      onContextMenu={onContextMenu}
     >
       <span
         className="flex size-5.5 shrink-0 overflow-hidden rounded-2xs shadow-[0_0_0_1px_var(--ui-border-strong)]"
@@ -52,13 +66,16 @@ function LibraryRow({
           "min-w-0 flex-1 truncate text-left text-ui-md",
           active ? "font-semibold text-ink" : "text-ink-2 hover:underline",
         )}
-        title={row.id}
+        title={`${row.id} · 右键打开菜单`}
         onClick={onSelect}
+        onContextMenu={onContextMenu}
       >
         {row.label}
       </button>
 
-      <Badge variant={active ? "strong" : "outline"}>{row.theme.base === "light" ? "L" : "D"}</Badge>
+      <Badge variant={active ? "strong" : "outline"}>
+        {row.theme.builtin ? "预设" : row.theme.base === "light" ? "L" : "D"}
+      </Badge>
 
       {applied ? (
         <span
@@ -67,21 +84,6 @@ function LibraryRow({
           aria-label="使用中"
         />
       ) : null}
-
-      <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
-        <Button variant="ghost" size="icon-sm" title="复制" onClick={onDuplicate}>
-          <Copy className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title="删除"
-          className="hover:text-danger"
-          onClick={onDelete}
-        >
-          <X className="size-3" />
-        </Button>
-      </span>
     </div>
   );
 }
@@ -97,6 +99,8 @@ export function LibraryColumn({
   onSelect,
   onDuplicate,
   onDelete,
+  onApply,
+  onRename,
   onNew,
   onCollapse,
 }: {
@@ -110,12 +114,23 @@ export function LibraryColumn({
   onSelect: (id: string) => void;
   onDuplicate: (id: string) => void;
   onDelete: (id: string) => void;
+  onApply: (id: string) => void;
+  onRename: (id: string) => void;
   onNew: () => void;
   onCollapse: () => void;
 }) {
   const needle = filter.trim().toLowerCase();
   const match = (id: string, label: string) =>
     !needle || label.toLowerCase().includes(needle) || id.toLowerCase().includes(needle);
+
+  const [menu, setMenu] = useState<MenuState>(null);
+  const menuTheme = menu ? themes.find((item) => item.id === menu.id) : null;
+  const menuLocked = Boolean(menuTheme?.builtin);
+
+  const openMenu = (id: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    setMenu({ id, x: event.clientX, y: event.clientY });
+  };
 
   const groups: Array<{ label: string; rows: Row[] }> = [
     {
@@ -185,8 +200,7 @@ export function LibraryColumn({
                   applied={applied === row.id}
                   defaults={defaults}
                   onSelect={() => onSelect(row.id)}
-                  onDuplicate={() => onDuplicate(row.id)}
-                  onDelete={() => onDelete(row.id)}
+                  onContextMenu={(event) => openMenu(row.id, event)}
                 />
               ))}
             </div>
@@ -203,6 +217,49 @@ export function LibraryColumn({
           复制
         </Button>
       </div>
+
+      {/*
+        右键菜单：modal={false} 是为了让面板里的其它交互（悬浮提示、预览点选）
+        不被它截断；锚点是那颗 0×0 的隐形 span。
+      */}
+      <DropdownMenu
+        open={Boolean(menu)}
+        modal={false}
+        onOpenChange={(open) => {
+          if (!open) setMenu(null);
+        }}
+      >
+        <DropdownMenuTrigger asChild>
+          {menu ? (
+            <span
+              aria-hidden
+              style={{ position: "fixed", left: menu.x, top: menu.y, width: 0, height: 0 }}
+            />
+          ) : (
+            <span aria-hidden />
+          )}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" sideOffset={4} className="min-w-44">
+          <DropdownMenuLabel>{menuTheme?.label ?? ""}</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => menu && onApply(menu.id)}>
+            <Send className="size-3.5" /> 应用这个主题
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => menu && onDuplicate(menu.id)}>
+            <Copy className="size-3.5" /> 复制
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={menuLocked} onSelect={() => menu && onRename(menu.id)}>
+            <Pencil className="size-3.5" /> 重命名
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={menuLocked}
+            className="data-[highlighted]:text-danger"
+            onSelect={() => menu && onDelete(menu.id)}
+          >
+            <Trash2 className="size-3.5" /> 删除
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </aside>
   );
 }

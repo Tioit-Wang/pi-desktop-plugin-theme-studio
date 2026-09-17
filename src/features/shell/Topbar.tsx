@@ -52,6 +52,7 @@ function Chip({
 export function Topbar({
   themeLabel,
   base,
+  builtin,
   overridden,
   strip,
   worst,
@@ -73,6 +74,8 @@ export function Topbar({
 }: {
   themeLabel: string;
   base: "dark" | "light";
+  /** 内置预设只读：名字不能改（主题库右键「复制」一份后才能改）。 */
+  builtin: boolean;
   overridden: number;
   strip: string[];
   worst: number;
@@ -117,9 +120,14 @@ export function Topbar({
       <Input
         aria-label="主题名称"
         data-theme-name=""
-        title="主题名（Ctrl/⌘+R 聚焦改名）"
+        title={
+          builtin
+            ? "内置预设不能改名 —— 请在主题库右键「复制」一份后再改"
+            : "主题名（Ctrl/⌘+R 聚焦改名）"
+        }
         value={draft}
         spellCheck={false}
+        disabled={builtin}
         className="h-7 w-44 border-transparent bg-transparent font-semibold hover:bg-tile"
         onChange={(event) => setDraft(event.target.value)}
         onBlur={() => onRename(draft)}

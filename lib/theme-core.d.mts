@@ -54,6 +54,27 @@ export type AuditRow = {
   ratio: number;
   bodyOk: boolean;
   largeOk: boolean;
+  largeOk: boolean;
+};
+
+export type AuditButtonPair = {
+  label: string;
+  fg: string;
+  bg: string;
+  /** 给了就把 bg 先合成到 bgOver 上再比（次级按钮底 = tile-hover 合成到页面底）。 */
+  bgOver?: string;
+  min: number;
+  /** true = 这一行量的是「底色与页面底的可区分度」，合成结果直接参与 contrast。 */
+  distinct?: boolean;
+};
+
+export type AuditButtonRow = {
+  label: string;
+  fg: string;
+  bg: string;
+  ratio: number;
+  min: number;
+  ok: boolean;
 };
 
 export type SurfaceImage = {
@@ -84,11 +105,13 @@ export type Design = {
   sidebarImage?: unknown;
 };
 
+
 export const TOKEN_GROUPS: TokenGroup[];
 export const TOKEN_KEYS: string[];
 export const TOKEN_BY_KEY: Record<string, TokenDef>;
 export const REGIONS: RegionDef[];
 export const AUDIT_PAIRS: AuditPair[];
+export const BUTTON_PAIRS: AuditButtonPair[];
 export const BACKGROUND_SIZES: string[];
 export const BACKGROUND_REPEATS: string[];
 export const BACKGROUND_POSITIONS: string[];
@@ -123,13 +146,18 @@ export function accentInk(effective: Record<string, string>): string;
 export function audit(effective: Record<string, string>): AuditRow[];
 export function worstRatio(rows: AuditRow[], tier?: AuditTier): number;
 
+export function overColor(top: string, under: string): string;
+export function buttonAudit(effective: Record<string, string>): AuditButtonRow[];
+/** 门槛：对比度（body 4.5 / decorative 3）+ 按钮配对 + 抬升条漂白。返回失败原因，空数组 = 通过。 */
+export function auditDesign(design: Design, base: string): string[];
+
 export function selectorFor(base: string): string;
 export function serialize(base: string, design: Design, options?: SerializeOptions): string;
 export function parse(css: string): unknown;
 export function overriddenKeys(design: { tokens?: Record<string, string> }): string[];
 
 /**
- * Ĭ�ϵ��� = ͬһ������������ռ���ͼ��ģ���� `export default ThemeModel`����
+ * Ĭ�ϵ��� = ͬһ������������ռ���ͼ��ģ���� `export default ThemeModel`����
  */
 declare const ThemeModel: {
   TOKEN_GROUPS: TokenGroup[];

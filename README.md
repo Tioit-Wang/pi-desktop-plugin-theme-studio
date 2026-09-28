@@ -15,7 +15,7 @@ pi.theme.studio
 ├─ manifest.json            面板 + 停靠视图 + 1 条命令（+ 2 个静态贡献主题占位）
 ├─ main.js                  插件进程（CJS）：onLoad / onUnload / onPanelInvoke
 ├─ lib/
-│  ├─ theme-core.mjs        75 个 token 表、7 个区域、序列化、对比度与颜色计算
+│  ├─ theme-core.mjs        75 个 token 表、9 个区域、序列化、对比度与颜色计算
 │  └─ presets.mjs           5 套内置配色（QQ 2008 带一张随包的 8×8 贴图，其余四套纯配色）
 ├─ assets/presets/           预设随包的贴图（加载时复制进数据目录，CSS 用绝对路径）
 ├─ src/                     渲染层源码：React + Tailwind + shadcn/ui 风格组件
@@ -94,7 +94,7 @@ npm run typecheck    # tsc --noEmit，strict
 | 让底图看得见 | 图片被上层挡住了：点「一键透出」，把更深层的区域底色设成透明；整窗还会顺带放开 `bg-primary` / `bg-sidebar` / `bg-composer`。 |
 | Token | 悬浮面板的「Token」页：75 个变量按组折叠，未改的显示宿主当前值。颜色支持 `#rrggbb` / `#rrggbbaa` / `transparent`。 |
 | 图片 | 「图片」页列出你上传过的 PNG、它被谁用着、合计大小；也列出数据目录里没有登记记录的孤立文件。 |
-| 检查 | 「检查」页：WCAG 2.1 对比度表，半透明前景会先合成到背景上再算。低于 4.5:1 标红但不阻止保存。 |
+| 检查 | 「检查」页：WCAG 2.1 对比度表，半透明前景会先合成到背景上再算。低于门槛（正文 4.5:1 / 装饰 3:1）标红；保存走同一套审计，未通过会被拦下（Agent 可传 `forceAudit` 强行落盘）。 |
 | 缩放 | 画布工具条上的「适应 / 50% / 75% / 100%」，或 `Ctrl`/`⌘` + 滚轮（0.25–2 连续档）。缩放只改观看倍率。 |
 | 快捷键 | `Ctrl/⌘+S` 注册当前主题；`Ctrl/⌘+R` 聚焦主题名改名；`Esc` 收面板 / 回上一层。 |
 | 应用 | 「应用」把当前主题设为应用主题；「保存并应用」先注册再切换。 |

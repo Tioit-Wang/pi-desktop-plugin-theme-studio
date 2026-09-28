@@ -2,17 +2,17 @@
   "schemaVersion": 1,
   "id": "pi.theme.studio",
   "name": "主题工坊",
-  "version": "1.4.1",
-  "description": "PI-Desktop 主题工坊：内置 5 套配色，可视化调出属于自己的主题并一键应用。覆盖全部 75 个 --ds-* token；点预览里的区域即可编辑那一块（整窗 / 左栏 / 中栏 / 右栏 / 标题栏 / 会话区 / 输入栏），各自可设底色、渐变、图片、模糊与圆角，带实时预览与 WCAG 对比度检查。图片拖进来即用，存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径（ADR 0255）。",
+  "version": "1.5.0",
+  "description": "PI-Desktop 主题工坊：内置 5 套配色，可视化调出属于自己的主题并一键应用。覆盖全部 75 个 --ds-* token；点预览里的区域即可编辑那一块（整窗 / 左栏 / 左栏顶条 / 中栏 / 右栏 / 右栏顶条 / 标题栏 / 会话区 / 输入栏），各自可设底色、渐变、图片、模糊与圆角，带实时预览与对比度审计；保存未通过审计会被拦下。图片拖进来即用，存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径（ADR 0255）。",
   "i18n": {
     "en": {
       "name": "Theme Studio",
-      "description": "The PI-Desktop theme studio: five built-in palettes plus a visual editor for building your own, applied with one click. Covers all 75 --ds-* tokens; click a region in the preview to edit that region (whole window, sidebar, main pane, work panel, title bar, thread, composer) with its own fill, gradient, image, blur and radius, plus a live preview and WCAG contrast checks. Drop a PNG in to use it; images live in the plugin's own data directory and the theme CSS references them by absolute path (ADR 0255).",
+      "description": "The PI-Desktop theme studio: five built-in palettes plus a visual editor for building your own, applied with one click. Covers all 75 --ds-* tokens; click a region in the preview to edit that region (whole window, sidebar, sidebar top strip, main pane, work panel, work panel header, title bar, thread, composer) with its own fill, gradient, image, blur and radius, plus a live preview and contrast audits; saves that fail the audit are rejected. Drop a PNG in to use it; images live in the plugin's own data directory and the theme CSS references them by absolute path (ADR 0255).",
       "safetyNotes": "Theme designs live in this plugin's own settings and are registered through the host's runtime theme API. A PNG you pick is written into the plugin's own data directory (pi.plugin.getDataPath()/images/) and the theme CSS references it by absolute path. No files inside the plugin package, no network requests, no access to the workspace or to any other plugin's data."
     },
     "zh-CN": {
       "name": "主题工坊",
-      "description": "PI-Desktop 主题工坊：内置 5 套配色，可视化调出属于自己的主题并一键应用。覆盖全部 56 个 --ds-* token；点预览里的区域即可编辑那一块（整窗 / 左栏 / 中栏 / 右栏 / 标题栏 / 会话区 / 输入栏），各自可设底色、渐变、图片、模糊与圆角，带实时预览与 WCAG 对比度检查。图片拖进来即用，存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径（ADR 0255）。",
+      "description": "PI-Desktop 主题工坊：内置 5 套配色，可视化调出属于自己的主题并一键应用。覆盖全部 75 个 --ds-* token；点预览里的区域即可编辑那一块（整窗 / 左栏 / 左栏顶条 / 中栏 / 右栏 / 右栏顶条 / 标题栏 / 会话区 / 输入栏），各自可设底色、渐变、图片、模糊与圆角，带实时预览与对比度审计；保存未通过审计会被拦下。图片拖进来即用，存在插件自己的数据目录里，主题 CSS 直接引用它的绝对路径（ADR 0255）。",
       "safetyNotes": "主题设计存在本插件自己的 settings 里，通过宿主的运行时主题 API 注册；你选的 PNG 写在插件的数据目录下（pi.plugin.getDataPath()/images/），主题 CSS 引用它的绝对路径。不写插件包内文件、不访问网络、不访问工作区或其他插件的数据。"
     }
   },

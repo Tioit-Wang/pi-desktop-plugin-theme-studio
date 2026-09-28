@@ -37,6 +37,14 @@ Agent 不用记两套语义。
 校验失败一律返回 `{ ok: false, error }`（不是抛异常）：模型拿到的是带 key、值、可用集合的
 结构化原因，能自己改对重试。四个工具在这件事上一致。
 
+## 保存审计门槛
+
+`theme_studio_write` 落盘前会跑 `core.auditDesign()`：对比度（正文层 4.5:1、装饰层 3:1）+
+按钮配对（主按钮墨色、ghost 静置态、次级按钮可读且与页面底可区分）+ 抬升条漂白（右栏
+顶条的白纱把饱和底色的色度洗掉 40% 以上）。未通过返回
+`{ ok: false, error, failures: [...] }`，修好再存；确要落盘传 `forceAudit: true`，结果仍会
+带回 `report.audit`。内置预设同一个门槛：`npm run audit:presets`。
+
 ## 「什么地方的背景 / 要不要透明」的映射
 
 写进 `list` 的 `notes` 与 `write` 的 description，不让模型猜：
@@ -47,6 +55,7 @@ Agent 不用记两套语义。
 | 左栏背景图 | `sidebar: { kind: "image", imagePath }` |
 | 左栏整体配色（「左栏压暗」） | `tokens: { "bg-sidebar": "#070b16" }` |
 | 中栏 / 右栏 / 标题栏 / 会话区 / 输入栏 | `regions: [{ region: "main" \| "dock" \| "titlebar" \| "thread" \| "composer", … }]` |
+| 左栏顶条 / 右栏顶条（46px 的操作条 / 标签条） | `regions: [{ region: "sidebar-top" \| "dock-top", … }]`（fillOnly：只吃底色 / 渐变 / 模糊 / 圆角，没有图片槽） |
 | 「要透明 / 让下层透出来」 | 区域 `fill: "transparent"`；整窗再加 `tokens: { bg-primary / bg-sidebar / bg-composer: "transparent" }` |
 | 「图放了但看不见」 | 该区域 `reveal: true`（等价面板的「一键透出」） |
 

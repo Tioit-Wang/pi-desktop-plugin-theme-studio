@@ -1693,6 +1693,19 @@ async function writeThemeFromSpec(args) {
   }
   for (const region of report.regions) for (const id of region.revealed) report.revealed.push(id);
 
+  // 入库门槛：对比度 + 按钮配对 + 抬升条漂白（core.auditDesign）。
+  // 带 forceAudit: true 可以带着未达标的设计强行落盘 —— 审计结果仍会带回。
+  const auditFailures = core.auditDesign(theme, theme.base);
+  if (auditFailures.length > 0 && input.forceAudit !== true) {
+    return {
+      ok: false,
+      error:
+        "审计未通过（" + auditFailures.length + " 项）。修好再存，或确认后传 forceAudit: true 强行落盘。",
+      failures: auditFailures,
+    };
+  }
+  if (auditFailures.length > 0) report.audit = auditFailures;
+
   const result = await saveTheme({ theme });
   const applied = input.apply === true;
   if (applied) await applyTheme({ id: theme.id });
@@ -2002,6 +2015,7 @@ function mergePresetThemes(state, themes) {
   const byId = new Map(list.map((theme) => [theme && theme.id, theme]));
   let added = 0;
   let adopted = 0;
+  let updated = 0;
 
   for (const presetTheme of presets.PRESETS) {
     const id = presetTheme.id;
@@ -2010,6 +2024,16 @@ function mergePresetThemes(state, themes) {
       if (existing.builtin !== true && sameDesign(existing, presetTheme)) {
         list[list.indexOf(existing)] = { ...existing, builtin: true };
         adopted += 1;
+      } else if (existing.builtin === true && !sameDesign(existing, presetTheme)) {
+        // 内置预设只读，本地不可能有用户改动；设计对不上只可能是插件升级
+        // 带来的预设修订（比如修好的对比度）—— 刷新本地副本，让新配色真正
+        // 落到用户库里，而不是永远停在装插件那天的值。
+        list[list.indexOf(existing)] = {
+          ...JSON.parse(JSON.stringify(presetTheme)),
+          id: existing.id,
+          builtin: true,
+        };
+        updated += 1;
       }
       seeded.add(id);
       continue;
@@ -2027,7 +2051,7 @@ function mergePresetThemes(state, themes) {
     presetIds: Array.from(seeded),
     added,
     adopted,
-    changed: added > 0 || adopted > 0 || !Array.isArray(state.presetIds),
+    changed: added > 0 || adopted > 0 || updated > 0 || !Array.isArray(state.presetIds),
   };
 }
 
@@ -2154,6 +2178,7 @@ async function onLoad() {
       await persist(state);
       if (merged.added) console.log(`[theme-studio] 并进 ${merged.added} 套新增的内置预设`);
       if (merged.adopted) console.log(`[theme-studio] 认领 ${merged.adopted} 套同设计的用户主题为预设`);
+      if (merged.updated) console.log(`[theme-studio] 刷新 ${merged.updated} 套内置预设到当前版本的设计`);
       if (seededImages.added) console.log(`[theme-studio] 预设贴图已落盘 ${seededImages.added} 张`);
     }
     const themes = merged.themes;
